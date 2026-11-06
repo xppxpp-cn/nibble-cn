@@ -596,17 +596,30 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let mapped = activeButtonMaps(loadConfig()).values.reduce(0) { $0 + $1.count }
         if !running {
             setHealth(engineValue, ok: mapped > 0 ? false : nil,
-                      mapped > 0 ? "菜单栏未运行，你的 \(mapped) remap\(mapped == 1 ? "" : "s") are off"
+                      mapped > 0 ? "菜单栏未运行，\(mapped) 项按键映射未生效"
                                  : "菜单栏未运行")
             engineFix.isHidden = false
         } else if st["active"] as? Bool == true {
             let n = st["mappings"] as? Int ?? 0
-            setHealth(engineValue, ok: true, "运行中 · \(n) mapping\(n == 1 ? "" : "s")")
+            setHealth(engineValue, ok: true, "运行中 · \(n) 项按键映射")
             engineFix.isHidden = true
         } else {
             let reason = st["reason"] as? String ?? "菜单栏尚未上报状态"
-            // 「沒設定映射」不是故障，只是還沒用到這個功能
-            setHealth(engineValue, ok: reason.contains("没有映射") ? nil : false, reason)
+            // Keep machine-readable engine reasons in English; translate only the UI.
+            let readableReason: String
+            switch reason {
+            case "no mappings configured": readableReason = "尚未配置按键映射"
+            case "Accessibility permission not granted": readableReason = "未授权辅助功能权限"
+            case "device exposes neither 0x8110 nor 0x1b04": readableReason = "设备不支持按键映射"
+            case "device disconnected — waiting for reconnect": readableReason = "设备已断开，等待重新连接"
+            case "paused by user": readableReason = "用户已暂停映射"
+            default:
+                readableReason = reason.hasPrefix("no mappings for ")
+                    ? "当前设备没有配置按键映射"
+                    : reason
+            }
+            // 尚未配置按键不是故障，不显示红色错误状态。
+            setHealth(engineValue, ok: reason.contains("no mappings") ? nil : false, readableReason)
             engineFix.isHidden = true
         }
 
