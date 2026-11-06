@@ -41,7 +41,7 @@ private func acquireMenuBarLock() -> Bool {
 func runMenuBar() -> Int32 {
     guard acquireMenuBarLock() else {
         // 從 Finder 啟動時沒有終端機可印訊息——直接把既有那個實例叫到前面才看得出發生什麼事
-        print("Nibble menu bar is already running.")
+        print("Nibble 菜单栏程序已在运行。")
         if let id = Bundle.main.bundleIdentifier {
             let others = NSRunningApplication.runningApplications(withBundleIdentifier: id)
                 .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
@@ -250,7 +250,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let devName = (try? dev.name()) ?? "unknown"
             guard let devMap = maps[devName], !devMap.isEmpty else {
                 engineItem.title = "按键映射：无适用于 \(devName)"
-                EngineState.writeStatus(["active": false, "reason": "no mappings for \(devName)", "mappings": 0, "axTrusted": axTrusted()])
+                EngineState.writeStatus(["active": false, "reason": "没有适用于以下设备的映射：\(devName)", "mappings": 0, "axTrusted": axTrusted()])
                 return
             }
             let needsAX = devMap.values.contains { $0.type == "keys" || $0.type == "system" }
@@ -344,7 +344,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let edit = NSMenuItem(title: "Edit profiles…", action: #selector(openButtonsAction), keyEquivalent: "")
+        let edit = NSMenuItem(title: "编辑配置方案…", action: #selector(openButtonsAction), keyEquivalent: "")
         edit.target = self
         menu.addItem(edit)
         profileRoot.submenu = menu
