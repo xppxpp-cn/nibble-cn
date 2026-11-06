@@ -25,6 +25,11 @@ jobs:
           echo "$ARCHS" | grep -q arm64
           echo "$ARCHS" | grep -q x86_64
           codesign --verify --deep Nibble.app
+          BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw -o - Nibble.app/Contents/Info.plist)"
+          echo "Bundle ID: $BUNDLE_ID"
+          test "$BUNDLE_ID" = "com.xppxpp.nibblecn"
+          DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw -o - Nibble.app/Contents/Info.plist)"
+          test "$DISPLAY_NAME" = "Nibble 中文版"
       - name: Create ZIP archive
         run: |
           ditto -c -k --keepParent Nibble.app Nibble-zh-CN-macOS-universal.zip
