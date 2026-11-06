@@ -236,7 +236,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             try switchProfile(to: name)
             reload()
             onStatus?(dropped > 0
-                ? "配置：\(name) · 已放弃 \(dropped) 个未保存的按键修改\(dropped == 1 ? "" : "s")"
+                ? "配置：\(name) · 已放弃 \(dropped) 项未保存的按键修改"
                 : "配置：\(name)")
         } catch { onStatus?("❌ \(error)") }
     }
@@ -263,7 +263,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         rebuildProfilePopup()
         reload()
         onStatus?(dropped > 0
-            ? "\(note) · 已放弃 \(dropped) 个未保存的按键修改\(dropped == 1 ? "" : "s")"
+            ? "\(note) · 已放弃 \(dropped) 项未保存的按键修改"
             : note)
     }
 
@@ -276,13 +276,13 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     @objc private func duplicateProfile() {
         let from = currentProfileName(loadConfig())
         guard let name = askName("复制配置：\(from)", "\(from) 副本") else { return }
-        do { try createProfile(name, 副本From: from); afterProfileChange("已创建 \(name) from \(from)") }
+        do { try createProfile(name, copyFrom: from); afterProfileChange("已创建 \(name)，源自 \(from)") }
         catch { onStatus?("❌ \(error)") }
     }
 
     @objc private func renameCurrentProfile() {
         let old = currentProfileName(loadConfig())
-        guard let name = askName("重命名 \(old) to", old), name != old else { return }
+        guard let name = askName("将 \(old) 重命名为", old), name != old else { return }
         do { try renameProfile(old, to: name); afterProfileChange("已重命名为 \(name)") }
         catch { onStatus?("❌ \(error)") }
     }
@@ -310,7 +310,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             if dev.has(0x8110) {
                 let n = try dev.buttonSpyCount()
                 for i in 0..<n {
-                    out.append(ButtonRow(index: i, name: "G\(i + 1)" + (i == 0 ? "（左键）" : i == 1 ? "（右键）" : ""),
+                    out.append(ButtonRow(index: i, name: "G\(i + 1)" + (i == 0 ? " (left)" : i == 1 ? " (right)" : ""),
                                          remappable: i >= 2, action: saved["G\(i + 1)"]))
                 }
             } else if dev.has(0x1b04) {
@@ -426,7 +426,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         systemPopup.isHidden = idx != 2
         appField.isHidden = idx != 2
         switch idx {
-        case 0: editorNote.stringValue = "Click the field and press the combination. Esc clears it."
+        case 0: editorNote.stringValue = "点击输入框后按下组合键，Esc 可清除。"
         case 1: editorNote.stringValue = "使用逗号分隔组合键和延迟，例如 150ms。"
         case 2: editorNote.stringValue = "选择系统动作，或输入要打开的应用名称 / 深度链接。"
         case 3: editorNote.stringValue = "该按键不会执行任何操作。"
@@ -517,7 +517,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             }
             pending.removeAll()
             onPendingChange?(0)
-            onStatus?("已保存 \(count) 项修改\(count == 1 ? "" : "s")，菜单栏将重载映射引擎")
+            onStatus?("已保存 \(count) 项修改，菜单栏将重载映射引擎")
         } catch {
             onStatus?("❌ 保存失败：\(error)")
         }
