@@ -19,13 +19,13 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
 
     private let table = NSTableView()
     private var helpBadge: NSImageView!
-    private let learnButton = NSButton(title: "Press to identify", target: nil, action: nil)
+    private let learnButton = NSButton(title: "按键识别", target: nil, action: nil)
     private let profilePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let profileMenuButton = NSPopUpButton(frame: .zero, pullsDown: true)
 
     // 右側編輯面板
-    private let editorTitle = NSTextField(labelWithString: "No button selected")
-    private let typeControl = NSSegmentedControl(labels: ["Keys", "Macro", "System", "Disable", "Default"],
+    private let editorTitle = NSTextField(labelWithString: "尚未选择按键")
+    private let typeControl = NSSegmentedControl(labels: ["快捷键", "宏", "系统", "禁用", "默认"],
                                                  trackingMode: .selectOne, target: nil, action: nil)
     private let macroField = NSTextField(string: "")
     private let recorder = KeyRecorderView(frame: .zero)
@@ -58,11 +58,11 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     func makeView() -> NSView {
         // 兩欄平分寬度：button 固定夠放最長的鍵名，action 吃掉剩下全部，
         // 右側不留空白（否則看起來像有第三個空欄位）
-        let btnCol = withTitle("button", "col-btn", 92)
+        let btnCol = withTitle("按键", "col-btn", 92)
         btnCol.minWidth = 80
         btnCol.maxWidth = 110
         table.addTableColumn(btnCol)
-        let actCol = withTitle("action", "col-act", 140)
+        let actCol = withTitle("功能", "col-act", 140)
         actCol.minWidth = 100
         table.addTableColumn(actCol)
         table.delegate = self
@@ -78,23 +78,23 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         table.target = self
 
         let ctx = NSMenu()
-        let clearItem = NSMenuItem(title: "Clear mapping", action: #selector(clearSelected), keyEquivalent: "")
+        let clearItem = NSMenuItem(title: "清除映射", action: #selector(clearSelected), keyEquivalent: "")
         clearItem.target = self
         ctx.addItem(clearItem)
         table.menu = ctx
 
         profilePopup.target = self
         profilePopup.action = #selector(profileChanged)
-        profilePopup.toolTip = "Each profile is its own set of button mappings. Switching one takes effect immediately — the menu bar has the same list."
+        profilePopup.toolTip = "每个配置方案都有独立的按键映射；切换后立即生效，也可从菜单栏切换。"
         profilePopup.translatesAutoresizingMaskIntoConstraints = false
         profilePopup.widthAnchor.constraint(equalToConstant: 150).isActive = true
 
         // pull-down 的第一項是標題，不會被選中
         profileMenuButton.addItem(withTitle: "⋯")
-        for (title, sel) in [("New profile…", #selector(newProfile)),
-                             ("Duplicate this profile…", #selector(duplicateProfile)),
-                             ("Rename…", #selector(renameCurrentProfile)),
-                             ("Delete", #selector(deleteCurrentProfile))] {
+        for (title, sel) in [("新建配置…", #selector(newProfile)),
+                             ("复制当前配置…", #selector(duplicateProfile)),
+                             ("重命名…", #selector(renameCurrentProfile)),
+                             ("删除", #selector(deleteCurrentProfile))] {
             let item = NSMenuItem(title: title, action: sel, keyEquivalent: "")
             item.target = self
             profileMenuButton.menu?.addItem(item)
@@ -102,7 +102,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         profileMenuButton.translatesAutoresizingMaskIntoConstraints = false
         profileMenuButton.widthAnchor.constraint(equalToConstant: 46).isActive = true
 
-        let profileRow = NSStackView(views: [NSTextField(labelWithString: "Profile"), profilePopup, profileMenuButton])
+        let profileRow = NSStackView(views: [NSTextField(labelWithString: "配置方案"), profilePopup, profileMenuButton])
         profileRow.spacing = 8
         profileRow.translatesAutoresizingMaskIntoConstraints = false
 
@@ -119,12 +119,12 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         learnButton.action = #selector(toggleLearn)
         learnButton.translatesAutoresizingMaskIntoConstraints = false
 
-        learnButton.toolTip = "Press a physical mouse button and its row is selected. Wheel scrolling isn't a button; the wheel click and tilts are."
-        table.toolTip = "Right-click a row to clear its mapping. G1/G2 (left/right click) can't be remapped so the mouse can never lock you out."
+        learnButton.toolTip = "按下鼠标实体按键即可定位；滚轮滚动不是按键，但滚轮按下及左右倾斜是。"
+        table.toolTip = "右键点击某行可清除映射。G1/G2 左右主键不可修改，防止鼠标失去基本操作。"
         helpBadge = nibbleHelpBadge(
-            "Edits are staged, not written as you go — press Save (or Return) to commit them, "
-            + "and the menu bar reloads the remap engine. Right-click a row to clear it. "
-            + "G1/G2 stay untouched so the mouse can never lock you out.")
+            "修改会先暂存；点击“保存”（或按回车）才会写入，"
+            + "随后菜单栏会重载映射引擎。右键点击某行可清除映射。"
+            + "G1/G2 左右主键始终保持原样。")
         helpBadge.translatesAutoresizingMaskIntoConstraints = false
 
         let editor = makeEditor()
@@ -169,8 +169,8 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         typeControl.segmentDistribution = .fillProportionally
 
         recorder.onChange = { [weak self] _ in self?.applyEditor() }
-        recorder.toolTip = "Click here, then press the combination you want. Esc clears it."
-        typeControl.toolTip = "Keystroke sends one combination · Macro plays a sequence · System runs a built-in action, app or deeplink · Disable makes the button inert · Default hands it back to the mouse"
+        recorder.toolTip = "点击后按下组合键，按 Esc 清除。"
+        typeControl.toolTip = "快捷键：发送组合键；宏：依次执行操作；系统：执行系统动作或打开应用；禁用：按键无动作；默认：交还鼠标原生处理。"
         recorder.translatesAutoresizingMaskIntoConstraints = false
         recorder.heightAnchor.constraint(equalToConstant: 30).isActive = true
 
@@ -178,14 +178,17 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         macroField.target = self
         macroField.action = #selector(applyEditor)
         macroField.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        macroField.toolTip = "Comma-separated steps. Each step is a key combination or a delay (150ms, 1.5s). Max 64 steps, 30s total."
+        macroField.toolTip = "以逗号分隔操作；每步可为快捷键或延迟（150ms、1.5s）；最多 64 步，总延迟不超过 30 秒。"
 
-        systemPopup.addItems(withTitles: SystemAction.allCases.map(\.rawValue))
+        for action in SystemAction.allCases {
+            systemPopup.addItem(withTitle: action.zhLabel)
+            systemPopup.lastItem?.representedObject = action.rawValue
+        }
         systemPopup.target = self
         systemPopup.action = #selector(applyEditor)
 
-        appField.placeholderString = "app name or deeplink"
-        appField.toolTip = "An app name (Safari) launches it. Anything containing :// is opened as a deeplink — raycast://extensions/…, obsidian://…, shortcuts://…"
+        appField.placeholderString = "应用名称或深度链接"
+        appField.toolTip = "输入应用名称（如 Safari）即可启动；包含 :// 的内容会作为深度链接打开，例如 raycast://、obsidian://、shortcuts://。"
         appField.target = self
         appField.action = #selector(appFieldCommitted)
         appField.font = .systemFont(ofSize: 12)
@@ -233,8 +236,8 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             try switchProfile(to: name)
             reload()
             onStatus?(dropped > 0
-                ? "Profile: \(name) · discarded \(dropped) unsaved button change\(dropped == 1 ? "" : "s")"
-                : "Profile: \(name)")
+                ? "配置：\(name) · 已放弃 \(dropped) 个未保存的按键修改\(dropped == 1 ? "" : "s")"
+                : "配置：\(name)")
         } catch { onStatus?("❌ \(error)") }
     }
 
@@ -245,8 +248,8 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = initial
         alert.accessoryView = field
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
         alert.window.initialFirstResponder = field
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         let name = field.stringValue.trimmingCharacters(in: .whitespaces)
@@ -260,39 +263,39 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         rebuildProfilePopup()
         reload()
         onStatus?(dropped > 0
-            ? "\(note) · discarded \(dropped) unsaved button change\(dropped == 1 ? "" : "s")"
+            ? "\(note) · 已放弃 \(dropped) 个未保存的按键修改\(dropped == 1 ? "" : "s")"
             : note)
     }
 
     @objc private func newProfile() {
-        guard let name = askName("Name for the new profile") else { return }
-        do { try createProfile(name); afterProfileChange("Created \(name) — it starts empty") }
+        guard let name = askName("新配置名称") else { return }
+        do { try createProfile(name); afterProfileChange("已创建 \(name)（空白配置）") }
         catch { onStatus?("❌ \(error)") }
     }
 
     @objc private func duplicateProfile() {
         let from = currentProfileName(loadConfig())
-        guard let name = askName("Name for the copy of \(from)", "\(from) copy") else { return }
-        do { try createProfile(name, copyFrom: from); afterProfileChange("Created \(name) from \(from)") }
+        guard let name = askName("复制配置：\(from)", "\(from) 副本") else { return }
+        do { try createProfile(name, 副本From: from); afterProfileChange("已创建 \(name) from \(from)") }
         catch { onStatus?("❌ \(error)") }
     }
 
     @objc private func renameCurrentProfile() {
         let old = currentProfileName(loadConfig())
-        guard let name = askName("Rename \(old) to", old), name != old else { return }
-        do { try renameProfile(old, to: name); afterProfileChange("Renamed to \(name)") }
+        guard let name = askName("重命名 \(old) to", old), name != old else { return }
+        do { try renameProfile(old, to: name); afterProfileChange("已重命名为 \(name)") }
         catch { onStatus?("❌ \(error)") }
     }
 
     @objc private func deleteCurrentProfile() {
         let name = currentProfileName(loadConfig())
         let alert = NSAlert()
-        alert.messageText = "Delete the \(name) profile?"
-        alert.informativeText = "Its button mappings go with it. Other profiles are untouched."
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "确定删除 \(name) 配置吗？"
+        alert.informativeText = "其按键映射也将删除，其他配置不受影响。"
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        do { try deleteProfile(name); afterProfileChange("Deleted \(name)") }
+        do { try deleteProfile(name); afterProfileChange("已删除 \(name)") }
         catch { onStatus?("❌ \(error)") }
     }
 
@@ -307,7 +310,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             if dev.has(0x8110) {
                 let n = try dev.buttonSpyCount()
                 for i in 0..<n {
-                    out.append(ButtonRow(index: i, name: "G\(i + 1)" + (i == 0 ? " (left)" : i == 1 ? " (right)" : ""),
+                    out.append(ButtonRow(index: i, name: "G\(i + 1)" + (i == 0 ? "（左键）" : i == 1 ? "（右键）" : ""),
                                          remappable: i >= 2, action: saved["G\(i + 1)"]))
                 }
             } else if dev.has(0x1b04) {
@@ -323,7 +326,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             table.sizeLastColumnToFit()   // 撐滿捲動區，右側不留下看似空欄的縫隙
             if table.selectedRow < 0 { table.scrollRowToVisible(0) }
             updateEditor()
-            onStatus?("\(deviceName) · \(rows.count) buttons")
+            onStatus?("\(deviceName) · \(rows.count) 个按键")
         } catch {
             rows = []
             table.reloadData()
@@ -344,11 +347,11 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             // （有逗號的是巨集、單字的是系統動作）
             switch a.type {
             case "keys", "macro": text = a.keys ?? ""
-            case "system": text = a.action ?? ""
-            default: text = "disabled"
+            case "system": text = a.action.flatMap { SystemAction(rawValue: $0)?.zhLabel } ?? a.action ?? ""
+            default: text = "已禁用"
             }
         } else {
-            text = r.remappable ? "—" : "(system)"
+            text = r.remappable ? "—" : "（系统保留）"
         }
         let label = NSTextField(labelWithString: text)
         label.font = highlighted == row ? .boldSystemFont(ofSize: 12) : .systemFont(ofSize: 12)
@@ -375,8 +378,8 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         defer { suppressEditorApply = false }
 
         guard let i = selectedRow else {
-            editorTitle.stringValue = "No button selected"
-            editorNote.stringValue = "Select a row, or use Press to identify and press the physical button."
+            editorTitle.stringValue = "尚未选择按键"
+            editorNote.stringValue = "选择一个按键，或点击“按键识别”后按下鼠标按钮。"
             setEditorEnabled(false)
             recorder.isHidden = true
             systemPopup.isHidden = true
@@ -386,7 +389,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         let r = rows[i]
         editorTitle.stringValue = r.name
         guard r.remappable else {
-            editorNote.stringValue = "Primary buttons stay untouched so the mouse can never lock you out."
+            editorNote.stringValue = "左右主键保持原样，避免误操作导致鼠标无法使用。"
             setEditorEnabled(false)
             recorder.isHidden = true
             systemPopup.isHidden = true
@@ -406,7 +409,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             typeControl.selectedSegment = 2
             let a = r.action?.action ?? ""
             if a.hasPrefix("app:") || a.hasPrefix("url:") { appField.stringValue = String(a.dropFirst(4)) }
-            else { systemPopup.selectItem(withTitle: a) }
+            else { systemPopup.selectItem(withTitle: SystemAction(rawValue: a)?.zhLabel ?? a) }
         case "disable":
             typeControl.selectedSegment = 3
         default:
@@ -424,10 +427,10 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         appField.isHidden = idx != 2
         switch idx {
         case 0: editorNote.stringValue = "Click the field and press the combination. Esc clears it."
-        case 1: editorNote.stringValue = "Steps separated by commas — key combos and delays like 150ms."
-        case 2: editorNote.stringValue = "Pick a system action, or type an app name / deeplink to open."
-        case 3: editorNote.stringValue = "The button will do nothing at all."
-        default: editorNote.stringValue = "The mouse handles this button itself."
+        case 1: editorNote.stringValue = "使用逗号分隔组合键和延迟，例如 150ms。"
+        case 2: editorNote.stringValue = "选择系统动作，或输入要打开的应用名称 / 深度链接。"
+        case 3: editorNote.stringValue = "该按键不会执行任何操作。"
+        default: editorNote.stringValue = "此按键交由鼠标默认功能处理。"
         }
     }
 
@@ -453,7 +456,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             let seq = macroField.stringValue.trimmingCharacters(in: .whitespaces)
             guard !seq.isEmpty else { return }
             guard parseMacro(seq) != nil else {
-                onStatus?("⚠️ Can't read that macro — steps are key combos or delays (150ms), max 64 steps / 30s")
+                onStatus?("⚠️ 无法解析宏：每步只能是组合键或延迟（如 150ms），最多 64 步 / 30 秒")
                 return
             }
             action = ButtonAction(type: "macro", keys: seq, action: nil)
@@ -461,7 +464,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             let entry = appField.stringValue.trimmingCharacters(in: .whitespaces)
             let custom = entry.contains("://") ? "url:\(entry)" : "app:\(entry)"
             action = ButtonAction(type: "system", keys: nil,
-                                  action: entry.isEmpty ? systemPopup.titleOfSelectedItem : custom)
+                                  action: entry.isEmpty ? (systemPopup.selectedItem?.representedObject as? String) : custom)
         case 3:
             action = ButtonAction(type: "disable", keys: nil, action: nil)
         default:
@@ -485,10 +488,10 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         action.map {
             switch $0.type {
             case "keys", "macro": return $0.keys ?? ""
-            case "system": return $0.action ?? ""
-            default: return "disabled"
+            case "system": return $0.action.flatMap { SystemAction(rawValue: $0)?.zhLabel } ?? $0.action ?? ""
+            default: return "已禁用"
             }
-        } ?? "default"
+        } ?? "默认"
     }
 
     /// 暫存一筆改動：畫面立刻反映，設定檔還沒動
@@ -498,7 +501,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         rows[rowIndex].action = action
         table.reloadData()
         table.selectRowIndexes(IndexSet(integer: rowIndex), byExtendingSelection: false)
-        onStatus?("\(key) → \(describe(action)) · not saved yet")
+        onStatus?("\(key) → \(describe(action)) · 尚未保存")
         onPendingChange?(pending.count)
     }
 
@@ -514,9 +517,9 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
             }
             pending.removeAll()
             onPendingChange?(0)
-            onStatus?("Saved \(count) change\(count == 1 ? "" : "s") — the menu bar reloads the engine")
+            onStatus?("已保存 \(count) 项修改\(count == 1 ? "" : "s")，菜单栏将重载映射引擎")
         } catch {
-            onStatus?("❌ save failed: \(error)")
+            onStatus?("❌ 保存失败：\(error)")
         }
     }
 
@@ -525,7 +528,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         pending.removeAll()
         onPendingChange?(0)
         reload()
-        onStatus?("Discarded unsaved changes")
+        onStatus?("已放弃未保存的修改")
     }
 
     // MARK: press-to-identify
@@ -541,22 +544,22 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
                 prevMask = 0
                 try dev.buttonSpyStart()
                 tr.onReport = { [weak self] p in self?.handleSpy(p) }
-                onStatus?("Press a mouse button (wheel scrolling is not a button)")
+                onStatus?("请按下鼠标按钮（滚轮滚动不算按键）")
             } else if dev.has(0x1b04), let fi = try dev.featureIndex(of: 0x1b04) {
                 // MX 路徑：暫時 divert 所有可 divert 的鍵來聽事件，停止時全部還原
                 spyIdx = fi
                 divertedForLearn = (try dev.controls()).filter(\.divertable).map(\.cid)
                 for cid in divertedForLearn { try? dev.setDivert(cid: cid, on: true) }
                 tr.onReport = { [weak self] p in self?.handleDivertedEvent(p) }
-                onStatus?("Press a mouse button (buttons are inert while identifying)")
+                onStatus?("请按下鼠标按钮（识别期间按键功能暂时停用）")
             } else {
-                onStatus?("This device does not support identify")
+                onStatus?("此设备不支持按键识别")
                 return
             }
             spyDev = dev
             spyTransport = tr
             learning = true
-            learnButton.title = "⏹ Stop"
+            learnButton.title = "⏹ 停止"
         } catch {
             onStatus?("❌ \(error)")
         }
@@ -572,8 +575,8 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         spyDev = nil
         spyTransport = nil
         learning = false
-        learnButton.title = "Press to identify"
-        onStatus?("Identify stopped")
+        learnButton.title = "按键识别"
+        onStatus?("已停止按键识别")
     }
 
     func teardown() { if learning { stopLearn() } }
@@ -595,10 +598,10 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         guard let bit = (0..<16).first(where: { newly & (1 << $0) != 0 }) else { return }
         let row = Self.bitToRow(bit)
         guard row < rows.count else {
-            onStatus?("Got bit \(bit) — beyond the button count")
+            onStatus?("收到事件位 \(bit)，超出按键数量")
             return
         }
-        select(row, note: "Detected \(rows[row].name) · bit \(bit)")
+        select(row, note: "已识别 \(rows[row].name) · 事件位 \(bit)")
     }
 
     /// MX 路徑事件：payload 是目前按住的 CID 清單
@@ -608,7 +611,7 @@ final class ButtonsPane: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         while i + 1 < p.count && i < 11 {
             let cid = UInt16(p[i]) << 8 | UInt16(p[i + 1])
             if cid != 0, let row = rows.firstIndex(where: { $0.cid == cid }) {
-                select(row, note: "Detected \(rows[row].name)")
+                select(row, note: "已识别 \(rows[row].name)")
                 return
             }
             i += 2
