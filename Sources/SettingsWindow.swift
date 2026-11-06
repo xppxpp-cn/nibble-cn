@@ -43,30 +43,30 @@ func runSettingsUI(initialTab: String? = nil) -> Int32 {
 
 final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTabViewDelegate {
     private var window: NSWindow!
-    private let deviceLabel = NSTextField(labelWithString: "Detecting…")
+    private let deviceLabel = NSTextField(labelWithString: "正在检测…")
     private let batteryLabel = NSTextField(labelWithString: "")
     // DPI 用與選單列相同的級距——先前滑桿 100–6400、選單 400–3200、CLI 50–25600 三套並存
     private let dpiControl = NSSegmentedControl(labels: MenuBarDelegate.dpiPresets.map(String.init),
                                                 trackingMode: .selectOne, target: nil, action: nil)
     private let dpiCustom = NSTextField(string: "")
     private let rateControl = NSSegmentedControl(labels: ["125", "250", "500", "1000"], trackingMode: .selectOne, target: nil, action: nil)
-    private let rgbControl = NSSegmentedControl(labels: ["Off", "Cycle", "Breathing"], trackingMode: .selectOne, target: nil, action: nil)
-    private let replayCheck = NSButton(checkboxWithTitle: "Re-apply my settings at login", target: nil, action: nil)
-    private let startupCheck = NSButton(checkboxWithTitle: "Start Nibble at login", target: nil, action: nil)
+    private let rgbControl = NSSegmentedControl(labels: ["关闭", "循环", "呼吸"], trackingMode: .selectOne, target: nil, action: nil)
+    private let replayCheck = NSButton(checkboxWithTitle: "登录时恢复我的设置", target: nil, action: nil)
+    private let startupCheck = NSButton(checkboxWithTitle: "登录时启动 Nibble", target: nil, action: nil)
     private let startupNote = NSTextField(labelWithString: "")
-    private let notifyCheck = NSButton(checkboxWithTitle: "Notify me below", target: nil, action: nil)
+    private let notifyCheck = NSButton(checkboxWithTitle: "低于此电量时提醒", target: nil, action: nil)
     private let notifyField = NSTextField(string: "")
     // 健康狀態列：改鍵沒反應時的答案幾乎都在這三行裡（先前只有 CLI 的 `nibble doctor` 看得到）
-    private let imValue = NSTextField(labelWithString: "checking…")
-    private let axValue = NSTextField(labelWithString: "checking…")
-    private let engineValue = NSTextField(labelWithString: "checking…")
-    private let imFix = NSButton(title: "Open Settings…", target: nil, action: nil)
-    private let axFix = NSButton(title: "Open Settings…", target: nil, action: nil)
-    private let engineFix = NSButton(title: "Start Nibble", target: nil, action: nil)
+    private let imValue = NSTextField(labelWithString: "正在检查…")
+    private let axValue = NSTextField(labelWithString: "正在检查…")
+    private let engineValue = NSTextField(labelWithString: "正在检查…")
+    private let imFix = NSButton(title: "打开系统设置…", target: nil, action: nil)
+    private let axFix = NSButton(title: "打开系统设置…", target: nil, action: nil)
+    private let engineFix = NSButton(title: "启动 Nibble", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: " ")
     private let aboutButton = NSButton(title: "GitHub", target: nil, action: nil)
-    private let saveButton = NSButton(title: "Save", target: nil, action: nil)
-    private let closeButton = NSButton(title: "Close", target: nil, action: nil)
+    private let saveButton = NSButton(title: "保存", target: nil, action: nil)
+    private let closeButton = NSButton(title: "关闭", target: nil, action: nil)
     /// Save 只屬於 Buttons 分頁；General 是即時寫入的，那裡不該擺一顆永遠灰著的按鈕
     private var onButtonsTab = false
     private var lastIndex: UInt8 = 1
@@ -84,16 +84,16 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         batteryLabel.textColor = .secondaryLabelColor
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.font = .systemFont(ofSize: 11)
-        rgbControl.toolTip = "Written to the device immediately. The mouse has no way to report its current effect back, so Nibble shows the last one it applied."
-        rateControl.toolTip = "Higher rates poll more often — smoother tracking, slightly more battery. Writing this requires host mode; Nibble switches automatically."
-        replayCheck.toolTip = "Installs a one-shot launchd agent that runs `nibble apply` at login. It exits immediately after — nothing stays resident."
+        rgbControl.toolTip = "灯光设置将立即写入设备。鼠标不会返回当前灯效，因此显示的是 Nibble 上次设置的效果。"
+        rateControl.toolTip = "报告率越高，追踪越流畅，但耗电略高。设置时需要主机模式，Nibble 会自动切换。"
+        replayCheck.toolTip = "安装一次性登录任务，登录时执行 `nibble apply` 后立即退出，不会常驻。"
 
         dpiControl.target = self
         dpiControl.action = #selector(dpiPresetChanged)
         dpiControl.segmentDistribution = .fillEqually
         // 欄位只需容納 5 位數；全寬的輸入框會讓人以為要填長字串
         dpiCustom.placeholderString = "50–25600"
-        dpiCustom.toolTip = "Any value the sensor accepts. A DPI set with the mouse's own buttons shows up here when it isn't one of the presets."
+        dpiCustom.toolTip = "可输入传感器支持的 DPI。若鼠标按键设定的 DPI 不在预设值中，会在此显示。"
         dpiCustom.target = self
         dpiCustom.action = #selector(dpiCustomCommitted)
         dpiCustom.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
@@ -104,8 +104,8 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         replayCheck.action = #selector(replayToggled)
         startupCheck.target = self
         startupCheck.action = #selector(startupToggled)
-        startupCheck.toolTip = "Keeps the menu bar running, which is what executes your button remaps. "
-                             + "Without it, a reboot leaves the remaps dead — the login re-apply below only restores DPI, rate and lighting."
+        startupCheck.toolTip = "保持菜单栏程序运行，由它执行按键映射。"
+                             + "如果不启用，重启后按键映射不会运行；下方的登录时恢复设置仅负责 DPI、报告率和灯光。"
         startupNote.font = .systemFont(ofSize: 11)
         startupNote.textColor = .systemOrange
         startupNote.isHidden = true
@@ -127,13 +127,13 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         imFix.action = #selector(openInputMonitoringAction)
         axFix.action = #selector(openAccessibilityAction)
         engineFix.action = #selector(startMenuBarAction)
-        engineFix.toolTip = "Launches /Applications/Nibble.app — the menu bar hosts the remap engine."
+        engineFix.toolTip = "启动 /Applications/Nibble.app，菜单栏程序负责运行按键映射引擎。"
         rateControl.target = self
         rateControl.action = #selector(rateChanged(_:))
         rgbControl.target = self
         rgbControl.action = #selector(rgbChanged(_:))
 
-        let customCaption = NSTextField(labelWithString: "Custom")
+        let customCaption = NSTextField(labelWithString: "自定义")
         customCaption.font = .systemFont(ofSize: 11)
         customCaption.textColor = .secondaryLabelColor
         let dpiCustomRow = NSStackView(views: [customCaption, dpiCustom])
@@ -144,8 +144,8 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         // 一個把裝置設定寫回去。先前只有後者，重開機後按鍵全死卻沒人說得出為什麼。
         let launchRow = NSStackView(views: [
             startupCheck,
-            nibbleHelpBadge("Button remapping only works while the Nibble menu bar is running. "
-                          + "This registers it as a login item so it comes back after a reboot."),
+            nibbleHelpBadge("只有 Nibble 菜单栏程序运行时，按键映射才能生效。"
+                          + "启用后会注册登录启动项，重启后自动运行。"),
             startupNote,
         ])
         launchRow.spacing = 8
@@ -155,9 +155,9 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         // 不再需要一顆語意跟右下角 Save 撞車的按鈕
         let startupRow = NSStackView(views: [
             replayCheck,
-            nibbleHelpBadge("Everything on this tab is written to the mouse immediately, and lost when it powers "
-                          + "off — the mouse falls back to its onboard profile. With this ticked, whatever you set "
-                          + "here is remembered and re-applied at login; there's nothing to save by hand."),
+            nibbleHelpBadge("本页面的设置会立即写入鼠标，但鼠标断电后会丢失，"
+                          + "并恢复板载配置。勾选此项后，程序会记录当前设置，"
+                          + "登录时自动重新应用，无需手动保存。"),
         ])
         startupRow.spacing = 8
         startupRow.alignment = .centerY
@@ -166,30 +166,30 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         percentLabel.textColor = .secondaryLabelColor
         let notifyRow = NSStackView(views: [
             notifyCheck, notifyField, percentLabel,
-            nibbleHelpBadge("Delivered by the menu bar app, so it needs that running too. "
-                          + "You get one reminder per discharge cycle — plugging in resets it. "
-                          + "The menu bar icon turns red at the same level."),
+            nibbleHelpBadge("低电量通知由菜单栏程序发送，因此需要保持菜单栏运行。"
+                          + "每次放电周期只提醒一次，充电后重置提醒状态。"
+                          + "达到相同电量阈值时，菜单栏图标会变红。"),
         ])
         notifyRow.spacing = 6
         notifyRow.alignment = .centerY
 
-        let statusHeader = nibbleSectionRow(sectionLabel("Status"),
-            help: "The three things every remap depends on. Input Monitoring lets Nibble read the mouse; "
-                + "Accessibility lets it synthesize your keystrokes; the engine lives in the menu bar app. "
-                + "Permissions are reported for whichever process hosts the engine — `nibble doctor` prints the same checks.")
+        let statusHeader = nibbleSectionRow(sectionLabel("运行状态"),
+            help: "按键映射依赖三项状态：输入监控允许 Nibble 读取鼠标，"
+                + "辅助功能允许模拟按键，映射引擎运行在菜单栏程序中。"
+                + "权限状态取自实际运行引擎的进程；也可以运行 `nibble doctor` 检查。")
 
         let generalStack = NSStackView(views: [
             sectionLabel("DPI"), dpiControl, dpiCustomRow,
-            sectionLabel("Report rate (Hz)"), rateControl,
-            nibbleSectionRow(sectionLabel("Lighting"),
-                             help: "Lighting can't be read back from the mouse — Nibble shows the last effect it applied. "
-                                 + "A power cycle returns the mouse to its onboard profile."),
+            sectionLabel("报告率（Hz）"), rateControl,
+            nibbleSectionRow(sectionLabel("灯光效果"),
+                             help: "无法从鼠标读取灯光状态，Nibble 显示上次应用的效果。"
+                                 + "鼠标断电后会恢复板载配置。"),
             rgbControl,
             NSBox(), launchRow, startupRow, notifyRow,
             NSBox(), statusHeader,
-            healthRow("Input Monitoring", imValue, imFix),
-            healthRow("Accessibility", axValue, axFix),
-            healthRow("Remap engine", engineValue, engineFix),
+            healthRow("输入监控", imValue, imFix),
+            healthRow("辅助功能", axValue, axFix),
+            healthRow("按键映射引擎", engineValue, engineFix),
         ])
         generalStack.orientation = .vertical
         generalStack.alignment = .leading
@@ -200,18 +200,18 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         tabs.delegate = self
         tabs.translatesAutoresizingMaskIntoConstraints = false
         let general = NSTabViewItem(identifier: "general")
-        general.label = "General"
+        general.label = "常规"
         general.view = Self.pane(generalStack, pinBottom: false)
         tabs.addTabViewItem(general)
 
         let buttons = NSTabViewItem(identifier: "buttons")
-        buttons.label = "Buttons"
+        buttons.label = "按键"
         buttons.view = buttonsPane.makeView()
         tabs.addTabViewItem(buttons)
         buttonsPane.onStatus = { [weak self] msg in self?.setStatus(msg) }
         buttonsPane.onPendingChange = { [weak self] count in
             self?.saveButton.isEnabled = count > 0
-            self?.saveButton.title = count > 0 ? "Save (\(count))" : "Save"
+            self?.saveButton.title = count > 0 ? "保存（\(count)）" : "保存"
             self?.syncSaveButton()
         }
 
@@ -221,7 +221,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         // Enter 直接儲存——但只在 Buttons 分頁（見 syncSaveButton）。預設按鈕會在
         // 第一響應者之前吃掉 Return，在 General 打 DPI 按 Enter 就會變成「送出改鍵」。
         saveButton.isEnabled = false
-        saveButton.toolTip = "Write the pending button changes to the config file. The menu bar reloads the engine after that."
+        saveButton.toolTip = "将暂存的按键修改写入配置文件，随后菜单栏重新加载映射引擎。"
         closeButton.target = self
         closeButton.action = #selector(closeAction)
         closeButton.keyEquivalent = "\u{1b}"     // Esc 關窗
@@ -390,11 +390,11 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard buttonsPane.pendingCount > 0 else { return true }
         let alert = NSAlert()
-        alert.messageText = "Save \(buttonsPane.pendingCount) button change\(buttonsPane.pendingCount == 1 ? "" : "s")?"
-        alert.informativeText = "They haven't been written to the config yet."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = "保存 \(buttonsPane.pendingCount) 项按键修改？"
+        alert.informativeText = "这些修改尚未写入配置文件。"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "放弃修改")
+        alert.addButton(withTitle: "取消")
         switch alert.runModal() {
         case .alertFirstButtonReturn: buttonsPane.commitPending(); return true
         case .alertSecondButtonReturn: buttonsPane.discardPending(); return true
@@ -438,15 +438,15 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let supported = (try? dev.supportedReportRatesHz()) ?? []
             // 支援清單放 tooltip：它和上面那排按鈕通常一模一樣，常駐顯示只是重複
             if !supported.isEmpty {
-                rateControl.toolTip = "This device supports "
+                rateControl.toolTip = "此设备支持 "
                     + supported.sorted().map(String.init).joined(separator: " / ") + " Hz. "
-                    + "Writing the rate requires host mode; Nibble switches automatically."
+                    + "设置报告率需要主机模式，Nibble 会自动切换。"
             }
             showLighting()
-            setStatus("Ready")
+            setStatus("就绪")
         } catch {
-            deviceLabel.stringValue = "Mouse offline or asleep"
-            batteryLabel.stringValue = "Move the mouse, then reopen this panel"
+            deviceLabel.stringValue = "鼠标离线或处于休眠状态"
+            batteryLabel.stringValue = "移动鼠标唤醒，然后重新打开此页面"
             setStatus("❌ \(error)", sticky: true)
         }
     }
@@ -461,7 +461,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func updateBattery(_ dev: HIDPPDevice) {
         guard let b = try? dev.battery() else { return }
         let volt = b.millivolts.map { String(format: " · %.2fV", Double($0) / 1000) } ?? ""
-        batteryLabel.stringValue = "🔋 \(b.percent)%\(volt) · \(b.charging ? "charging" : "discharging")"
+        batteryLabel.stringValue = "🔋 \(b.percent)%\(volt) · \(b.charging ? "正在充电" : "放电中")"
     }
 
     /// 現值若不在級距上（例如滑鼠上的 DPI 鍵調出來的），就顯示在 Custom 欄位而不是假裝選中某一格
@@ -489,7 +489,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             var got = 0
             try uiHostFallback(dev) { got = try dev.setDPI(target) }
             showDPI(got)
-            statusLabel.stringValue = got == target ? "DPI → \(got) ✓" : "⚠️ asked \(target), device reports \(got)"
+            statusLabel.stringValue = got == target ? "DPI → \(got) ✓" : "⚠️ 期望值 \(target), 设备报告 \(got)"
         } catch { setStatus("❌ \(error)") }
     }
 
@@ -501,7 +501,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc private func dpiCustomCommitted() {
         let text = dpiCustom.stringValue.trimmingCharacters(in: .whitespaces)
         guard let v = Int(text), (50...25600).contains(v) else {
-            setStatus("⚠️ DPI must be a number between 50 and 25600")
+            setStatus("⚠️ DPI 必须介于 50 到 25600 之间")
             return
         }
         applyDPI(v)
@@ -512,8 +512,8 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         _ = cmdReplay([on ? "install" : "uninstall"])
         replayCheck.state = FileManager.default.fileExists(atPath: replayPlistURL.path) ? .on : .off
         statusLabel.stringValue = replayCheck.state == .on
-            ? "Settings will be re-applied at login ✓"
-            : "Login re-apply turned off"
+            ? "登录时将自动恢复设置 ✓"
+            : "已关闭登录时恢复设置"
     }
 
     @objc private func rateChanged(_ sender: NSSegmentedControl) {
@@ -523,7 +523,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let dev = try openDevice()
             var got = 0
             try uiHostFallback(dev) { got = try dev.setReportRateHz(hz) }
-            statusLabel.stringValue = got == hz ? "Report rate → \(got) Hz ✓" : "⚠️ asked \(hz), device reports \(got)"
+            statusLabel.stringValue = got == hz ? "报告率 → \(got) Hz ✓" : "⚠️ 期望值 \(hz), 设备报告 \(got)"
         } catch { setStatus("❌ \(error)") }
     }
 
@@ -573,7 +573,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     private func refreshHealth() {
         let im = inputMonitoringGranted()
-        setHealth(imValue, ok: im, im ? "granted" : "not granted — Nibble can't read the mouse")
+        setHealth(imValue, ok: im, im ? "已授权" : "未授权，Nibble 无法读取鼠标")
         imFix.isHidden = im
 
         let st = EngineState.read()
@@ -583,30 +583,30 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         // 但那份狀態是「上次回報」——選單列關掉後就不再更新，而重建 bundle 會讓
         // 綁在 cdhash 上的授權失效。所以沒在跑的時候只能說不知道，不能照著舊值說 ✓。
         if running, let ax = st["axTrusted"] as? Bool {
-            setHealth(axValue, ok: ax, ax ? "granted" : "not granted — remapped buttons stay silent")
+            setHealth(axValue, ok: ax, ax ? "已授权" : "未授权，按键映射无法执行")
             axFix.isHidden = ax
         } else if running {
-            setHealth(axValue, ok: nil, "the menu bar hasn't reported yet")
+            setHealth(axValue, ok: nil, "等待菜单栏上报状态")
             axFix.isHidden = false
         } else {
-            setHealth(axValue, ok: nil, "unknown — the menu bar isn't running to report it")
+            setHealth(axValue, ok: nil, "未知，菜单栏未运行")
             axFix.isHidden = false
         }
 
         let mapped = activeButtonMaps(loadConfig()).values.reduce(0) { $0 + $1.count }
         if !running {
             setHealth(engineValue, ok: mapped > 0 ? false : nil,
-                      mapped > 0 ? "menu bar not running — your \(mapped) remap\(mapped == 1 ? "" : "s") are off"
-                                 : "menu bar not running")
+                      mapped > 0 ? "菜单栏未运行，你的 \(mapped) remap\(mapped == 1 ? "" : "s") are off"
+                                 : "菜单栏未运行")
             engineFix.isHidden = false
         } else if st["active"] as? Bool == true {
             let n = st["mappings"] as? Int ?? 0
-            setHealth(engineValue, ok: true, "running · \(n) mapping\(n == 1 ? "" : "s")")
+            setHealth(engineValue, ok: true, "运行中 · \(n) mapping\(n == 1 ? "" : "s")")
             engineFix.isHidden = true
         } else {
-            let reason = st["reason"] as? String ?? "menu bar has not reported yet"
+            let reason = st["reason"] as? String ?? "菜单栏尚未上报状态"
             // 「沒設定映射」不是故障，只是還沒用到這個功能
-            setHealth(engineValue, ok: reason.contains("no mappings") ? nil : false, reason)
+            setHealth(engineValue, ok: reason.contains("没有映射") ? nil : false, reason)
             engineFix.isHidden = true
         }
 
@@ -624,7 +624,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc private func startMenuBarAction() {
         let url = URL(fileURLWithPath: "/Applications/Nibble.app")
         guard FileManager.default.fileExists(atPath: url.path) else {
-            setStatus("⚠️ /Applications/Nibble.app not found — run `make install-app`", sticky: true)
+            setStatus("⚠️ 未找到 /Applications/Nibble.app，请先运行 `make install-app`", sticky: true)
             return
         }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, err in
@@ -633,7 +633,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 if let err {
                     self.setStatus("❌ \(err.localizedDescription)", sticky: true)
                 } else {
-                    self.setStatus("Menu bar starting…")
+                    self.setStatus("正在启动菜单栏…")
                     self.scheduleHealthRecheck()
                 }
             }
@@ -655,9 +655,9 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if let failure {
             setStatus("❌ \(failure)", sticky: true)
         } else if LoginItem.needsApproval {
-            setStatus("Registered, but macOS is blocking it — enable Nibble in System Settings › General › Login Items", sticky: true)
+            setStatus("已注册，但被 macOS 阻止；请在“系统设置 › 通用 › 登录项”中启用 Nibble", sticky: true)
         } else {
-            setStatus(LoginItem.enabled ? "Nibble will start at login ✓" : "Login item removed")
+            setStatus(LoginItem.enabled ? "Nibble 将在登录时启动 ✓" : "已关闭登录启动")
         }
     }
 
@@ -678,10 +678,10 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             loadPreferences()   // 夾過範圍後把真正生效的值寫回欄位
             // 一次只講一句話：先前警告訊息會被下面那句成功訊息立刻蓋掉，
             // 於是輸入 99 只看得到「已設定 50%」，沒人知道自己打的值被改了
-            guard on else { setStatus("Low-battery alerts off"); return }
+            guard on else { setStatus("已关闭低电量提醒"); return }
             setStatus(clamped
                 ? "⚠️ \(lowBatteryRange.lowerBound)–\(lowBatteryRange.upperBound)% only — using \(notifyField.stringValue)%"
-                : "Low-battery alert at \(notifyField.stringValue)% ✓")
+                : "低电量提醒阈值 \(notifyField.stringValue)% ✓")
         } catch {
             setStatus("❌ \(error)", sticky: true)
         }
@@ -695,7 +695,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let applied = try uiSetRGB(dev, kind: kind)
             lastRGB = kind
             showLighting()
-            statusLabel.stringValue = applied > 0 ? "Lighting → \(kind) ✓" : "⚠️ effect not available on this device"
+            statusLabel.stringValue = applied > 0 ? "灯光效果 → \(kind) ✓" : "⚠️ 此设备不支持该灯光效果"
         } catch { setStatus("❌ \(error)") }
     }
 
