@@ -2,9 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Nibble</string>
-    <key>CFBundleDisplayName</key><string>Nibble</string>
-    <key>CFBundleIdentifier</key><string>com.ben0128.nibble</string>
+    <key>CFBundleName</key><string>Nibble CN</string>
+    <key>CFBundleDisplayName</key><string>Nibble 中文版</string>
+    <key>CFBundleIdentifier</key><string>com.xppxpp.nibblecn</string>
     <key>CFBundleExecutable</key><string>nibble</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.8.1</string>
