@@ -239,10 +239,10 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engineNeedsAX = false
         engineItem.action = nil
         engineItem.target = nil
-        let maps = 项已生效ButtonMaps(loadConfig())
+        let maps = activeButtonMaps(loadConfig())
         guard !maps.isEmpty else {
             engineItem.title = "按键映射：尚未配置"
-            EngineState.writeStatus(["active": false, "reason": "尚未配置按键映射", "mappings": 0, "axTrusted": axTrusted()])
+            EngineState.writeStatus(["active": false, "reason": "no mappings configured", "mappings": 0, "axTrusted": axTrusted()])
             return
         }
         do {
@@ -250,7 +250,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let devName = (try? dev.name()) ?? "unknown"
             guard let devMap = maps[devName], !devMap.isEmpty else {
                 engineItem.title = "按键映射：无适用于 \(devName)"
-                EngineState.writeStatus(["active": false, "reason": "没有适用于以下设备的映射：\(devName)", "mappings": 0, "axTrusted": axTrusted()])
+                EngineState.writeStatus(["active": false, "reason": "no mappings for \(devName)", "mappings": 0, "axTrusted": axTrusted()])
                 return
             }
             let needsAX = devMap.values.contains { $0.type == "keys" || $0.type == "system" }
@@ -262,7 +262,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 engineItem.title = "按键映射：⚠️ 需要辅助功能权限，点击授权"
                 engineItem.action = #selector(openAccessibility)
                 engineItem.target = self
-                EngineState.writeStatus(["active": false, "reason": "未授权辅助功能权限",
+                EngineState.writeStatus(["active": false, "reason": "Accessibility permission not granted",
                                    "mappings": devMap.count, "axTrusted": false,
                                    "fix": "系统设置 > 隐私与安全性 > 辅助功能 > 添加 Nibble.app"])
                 scheduleEngineRetry()
@@ -271,7 +271,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard case let tr = dev.transport,
                   let eng = makeRemapEngine(transport: tr, dev: dev, savedMap: devMap) else {
                 engineItem.title = "按键映射：设备不支持"
-                EngineState.writeStatus(["active": false, "reason": "设备不支持 0x8110 或 0x1b04 映射接口",
+                EngineState.writeStatus(["active": false, "reason": "device exposes neither 0x8110 nor 0x1b04",
                                    "mappings": devMap.count, "axTrusted": axTrusted()])
                 return
             }
@@ -284,16 +284,16 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.engine = nil
                 eng.stop()
                 self.engineItem.title = "按键映射：设备断开，将重试"
-                EngineState.writeStatus(["active": false, "reason": "设备已断开，等待重新连接",
+                EngineState.writeStatus(["active": false, "reason": "device disconnected — waiting for reconnect",
                                          "axTrusted": axTrusted()])
                 self.updateRemapSummary()
                 self.scheduleEngineRetry()
             }
             engineRetryDelay = 4
             engineItem.title = "按键映射：✓ \(eng.mappingCount) 项已生效"
-            EngineState.writeStatus(["active": true, "reason": "运行中", "mappings": eng.mappingCount,
+            EngineState.writeStatus(["active": true, "reason": "running", "mappings": eng.mappingCount,
                                "axTrusted": axTrusted(), "device": devName,
-                               "path": dev.has(0x8110) ? "0x8110 监听" : "0x1b04 事件转发"])
+                               "path": dev.has(0x8110) ? "0x8110 spy" : "0x1b04 divert"])
         } catch {
             engineItem.title = "按键映射：❌ \(error)"
             EngineState.writeStatus(["active": false, "reason": "\(error)", "axTrusted": axTrusted(),
@@ -321,7 +321,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             engine?.stop()
             engine = nil
             engineItem.title = "已暂停，鼠标按键恢复默认行为"
-            EngineState.writeStatus(["active": false, "reason": "用户已暂停"])
+            EngineState.writeStatus(["active": false, "reason": "paused by user"])
         } else {
             startEngine()
         }
@@ -348,7 +348,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         edit.target = self
         menu.addItem(edit)
         profileRoot.submenu = menu
-        profileRoot.title = names.count > 1 ? "Profile\t\(current)" : "配置方案"
+        profileRoot.title = names.count > 1 ? "配置方案\t\(current)" : "配置方案"
     }
 
     @objc private func switchProfileAction(_ sender: NSMenuItem) {
@@ -369,7 +369,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let profileTag = profileNames(cfg).count > 1 ? "\(currentProfileName(cfg)) · " : ""
         if remapPaused { remapRoot.title = "按键映射\t已暂停"; return }
         if let e = engine, e.active { remapRoot.title = "按键映射\t\(profileTag)\(e.mappingCount) 项已生效" }
-        else if 项已生效ButtonMaps(cfg).values.reduce(0, { $0 + $1.count }) == 0 {
+        else if activeButtonMaps(cfg).values.reduce(0, { $0 + $1.count }) == 0 {
             remapRoot.title = "按键映射\t无映射"
         } else {
             remapRoot.title = "按键映射\t⚠️ 未运行"
@@ -479,7 +479,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             setControlsLive(true)
             if engine == nil, !remapPaused, !activeButtonMaps(loadConfig()).isEmpty { startEngine() }
         } catch let e as HIDPPError {
-            if case .transport(let msg) = e, msg.contains("输入监控") {
+            if case .transport(let msg) = e, msg.contains("Input Monitoring") {
                 batteryPercent = nil
                 statusTooltip = "Nibble — 需要输入监控权限"
                 applyStatusAppearance()
