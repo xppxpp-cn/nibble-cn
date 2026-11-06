@@ -16,6 +16,19 @@ enum SystemAction: String, CaseIterable {
     case volumeUp = "volume-up"
     case volumeDown = "volume-down"
     case mute = "mute"
+
+    // Only the visible label is translated; rawValue stays unchanged for saved configs.
+    var zhLabel: String {
+        switch self {
+        case .missionControl: return "调度中心"
+        case .playPause: return "播放 / 暂停"
+        case .nextTrack: return "下一曲"
+        case .prevTrack: return "上一曲"
+        case .volumeUp: return "增大音量"
+        case .volumeDown: return "减小音量"
+        case .mute: return "静音"
+        }
+    }
 }
 
 /// macOS 虛擬鍵碼（ANSI 佈局標準值）

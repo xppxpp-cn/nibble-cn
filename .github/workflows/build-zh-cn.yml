@@ -1,0 +1,49 @@
+# Standalone Chinese build. Does not publish to the original author's Homebrew tap.
+name: 构建 Nibble 中文版
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nibble-zh-cn-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: macOS 通用应用 (Intel + Apple Silicon)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Verify Swift tests
+        run: make test
+
+      - name: Build universal macOS app
+        run: |
+          make universal
+          make app
+          ARCHS="$(lipo -archs Nibble.app/Contents/MacOS/nibble)"
+          echo "Architectures: $ARCHS"
+          echo "$ARCHS" | grep -q arm64
+          echo "$ARCHS" | grep -q x86_64
+          codesign --verify --deep Nibble.app
+
+      - name: Package application
+        run: |
+          ditto -c -k --keepParent Nibble.app Nibble-zh-CN-macOS-universal.zip
+          shasum -a 256 Nibble-zh-CN-macOS-universal.zip
+
+      - name: Upload installable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nibble-zh-CN-macOS-universal
+          path: Nibble-zh-CN-macOS-universal.zip
+          if-no-files-found: error
+          retention-days: 30
