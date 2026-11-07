@@ -147,7 +147,15 @@ func runRecoveryTests() {
             expect(mx ? tr.diverted.contains(0x53) : tr.table[6] == 0 && tr.spy,
                    "recovery restores the actual mouse state")
             expectEqual(Array(tr.table.prefix(2)), [1, 2], "primary buttons remain untouched")
+            var sessionChanges = 0
+            engine.onReconnect = { restore in
+                expect(!restore, "new receiver session never restores the old mouse table")
+                sessionChanges += 1
+            }
+            let beforeSessionChange = tr.writes
             tr.onReport?([1, 0x41, 0, 0, 0])
+            expectEqual(sessionChanges, 1, "0x41 requests fresh device discovery")
+            expectEqual(tr.writes, beforeSessionChange, "session invalidation performs no stale device writes")
             let oldCallback = tr.onReport
             engine.stop()
             let stoppedWrites = tr.writes

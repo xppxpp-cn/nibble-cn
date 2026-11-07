@@ -337,11 +337,20 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                    "lastHealthChange": ISO8601DateFormatter().string(from: Date())])
                 self.updateRemapSummary()
             }
-            eng.onReconnect = { [weak self, weak eng] in
-                guard let self, let eng, self.engine === eng else { return }
-                self.engine = nil
-                eng.stop()
-                self.scheduleEngineRetry()
+            eng.onReconnect = { [weak self, weak eng] restore in
+                HIDWorkQueue.shared.submit { [weak self, weak eng] in
+                    guard let self, let eng, self.engine === eng else { return }
+                    self.engine = nil
+                    if restore { eng.stop(); self.scheduleEngineRetry() }
+                    else {
+                        eng.detach()
+                        EngineState.write(["active": false, "reason": "wireless reconnect"])
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                            guard let self, self.engine == nil, !self.remapPaused, !self.systemSleeping else { return }
+                            self.startEngine()
+                        }
+                    }
+                }
             }
             try eng.start()
             engine = eng   // engine 持有 dev+transport → 事件流常駐
@@ -351,7 +360,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 HIDWorkQueue.shared.submit { [weak self, weak eng] in
                     guard let self, let eng, self.engine === eng else { return }
                     self.engine = nil
-                    eng.stop()
+                    eng.detach()
                     self.engineItem.title = "按键映射：设备断开，将重试"
                     EngineState.writeStatus(["active": false, "reason": "device disconnected — waiting for reconnect",
                                              "axTrusted": axTrusted()])

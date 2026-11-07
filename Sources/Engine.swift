@@ -60,10 +60,11 @@ protocol RemapEngineProtocol: AnyObject {
     func stop()
     var device: HIDPPDevice { get }
     var onHealthChange: ((Bool, String) -> Void)? { get set }
-    var onReconnect: (() -> Void)? { get set }
+    var onReconnect: ((Bool) -> Void)? { get set }
     func recover(reason: String)
     func suspend()
     func resume()
+    func detach()
     func checkHealth(rearm: Bool) throws
 }
 
@@ -111,13 +112,17 @@ final class MXRemapEngine: RemapEngineProtocol {
     private(set) var active = false
     var device: HIDPPDevice { dev }
     var onHealthChange: ((Bool, String) -> Void)?
-    var onReconnect: (() -> Void)?
+    var onReconnect: ((Bool) -> Void)?
     private lazy var recovery = RemapRecovery(apply: { [weak self] in
         try self?.reapply()
     }, state: { [weak self] ok, reason in
         self?.active = ok
         self?.onHealthChange?(ok, reason)
-    }, reconnect: { [weak self] in self?.onReconnect?() })
+    }, reconnect: { [weak self] in self?.onReconnect?(true) })
+    func detach() {
+        recovery.stop(); started = false; active = false
+        transport.onReport = nil
+    }
     func suspend() {
         systemSleeping = true; recovery.suspend(); active = false
         onHealthChange?(false, "system sleeping")
@@ -175,7 +180,13 @@ final class MXRemapEngine: RemapEngineProtocol {
     private func handle(_ p: [UInt8]) {
         guard started, p.count >= 5, p[0] == dev.index else { return }
         if p[1] == 0x41 {
-            if p[3] & 0x40 == 0 { recover(reason: "wireless reconnect") }
+            if p[3] & 0x40 == 0 {
+                if let onReconnect {
+                    // Receiver index is not a session identity. Do not restore an old
+                    // table onto a potentially different mouse; rediscover its features.
+                    detach(); onReconnect(false)
+                } else { recover(reason: "wireless reconnect") }
+            }
             else { active = false; onHealthChange?(false, "wireless device asleep or disconnected") }
             return
         }
@@ -210,13 +221,17 @@ final class RemapEngine: RemapEngineProtocol {
     private(set) var active = false
     var device: HIDPPDevice { dev }
     var onHealthChange: ((Bool, String) -> Void)?
-    var onReconnect: (() -> Void)?
+    var onReconnect: ((Bool) -> Void)?
     private lazy var recovery = RemapRecovery(apply: { [weak self] in
         try self?.reapply()
     }, state: { [weak self] ok, reason in
         self?.active = ok
         self?.onHealthChange?(ok, reason)
-    }, reconnect: { [weak self] in self?.onReconnect?() })
+    }, reconnect: { [weak self] in self?.onReconnect?(true) })
+    func detach() {
+        recovery.stop(); started = false; active = false
+        transport.onReport = nil
+    }
     func suspend() {
         systemSleeping = true; recovery.suspend(); active = false
         onHealthChange?(false, "system sleeping")
@@ -284,7 +299,13 @@ final class RemapEngine: RemapEngineProtocol {
         guard started, p.count >= 5, p[0] == dev.index else { return }
         // 連線通知：link 建立 → 延遲重掛（讓裝置先站穩）
         if p[1] == 0x41 {
-            if p[3] & 0x40 == 0 { recover(reason: "wireless reconnect") }
+            if p[3] & 0x40 == 0 {
+                if let onReconnect {
+                    // Receiver index is not a session identity. Do not restore an old
+                    // table onto a potentially different mouse; rediscover its features.
+                    detach(); onReconnect(false)
+                } else { recover(reason: "wireless reconnect") }
+            }
             else { active = false; onHealthChange?(false, "wireless device asleep or disconnected") }
             return
         }
