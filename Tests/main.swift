@@ -118,7 +118,7 @@ section("remap engine selection")
 do {
     let tr = MockTransport()
     let dev = HIDPPDevice(transport: tr, index: 1, swid: 0x0A)
-    expect(makeRemapEngine(transport: tr, dev: dev, savedMap: [:]) == nil, "no mappings means no engine")
+    expect((try? makeRemapEngine(transport: tr, dev: dev, savedMap: [:])) == nil, "no mappings means no engine")
     expectEqual(tr.sent.count, 0, "…decided without touching the device")
 }
 
@@ -131,7 +131,7 @@ do {
         reply(1, 0x00, fn: 0, swid: 0x0A, [0x00, 0, 0]),   // 0x1b04 也不支援
     ]
     let map = ["G7": ButtonAction(type: "keys", keys: "d", action: nil)]
-    expect(makeRemapEngine(transport: tr, dev: dev, savedMap: map) == nil,
+    expect((try? makeRemapEngine(transport: tr, dev: dev, savedMap: map)) == nil,
            "a device with neither button feature gets no engine")
 }
 

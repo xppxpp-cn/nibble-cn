@@ -79,12 +79,13 @@ func parseSpyButtonMap(_ savedMap: [String: ButtonAction]) -> [Int: ButtonAction
 
 /// 依裝置能力自動選路建引擎；config 的鍵名（"G7" 或 CID 名稱）在這裡解析成各自的索引
 func makeRemapEngine(transport: HIDPPTransport, dev: HIDPPDevice,
-                     savedMap: [String: ButtonAction]) -> RemapEngineProtocol? {
+                     savedMap: [String: ButtonAction]) throws -> RemapEngineProtocol? {
     guard !savedMap.isEmpty else { return nil }
-    if dev.has(0x8110) {
+    if try dev.featureIndex(of: 0x8110) != nil {
         return RemapEngine(transport: transport, dev: dev, mappings: parseSpyButtonMap(savedMap))
     }
-    if dev.has(0x1b04), let controls = try? dev.controls() {
+    if try dev.featureIndex(of: 0x1b04) != nil {
+        let controls = try dev.controls()
         var m: [UInt16: ButtonAction] = [:]
         for c in controls where c.divertable && c.cid != 0x0050 && c.cid != 0x0051 {
             let name = HIDPP.cidNames[c.cid] ?? String(format: "CID 0x%04X", c.cid)

@@ -86,6 +86,8 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var engineRetryScheduled = false
     private var engineRetryDelay: TimeInterval = 4
     private var axPrompted = false
+    private var configReloadWork: DispatchWorkItem?
+    private var engineMaps: Data?
     private var configWatch: DispatchSourceFileSystemObject?
     private var flashWork: DispatchWorkItem?
     private var batteryPercent: Int?
@@ -229,10 +231,18 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         src.setEventHandler { [weak self] in
             guard let self else { return }
             // 存檔常是「換檔」而非就地寫入 → 重新掛監看
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                self.startEngine()
+            self.configReloadWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+                let maps = try? encoder.encode(activeButtonMaps(loadConfig()))
+                if self.engine?.active != true || maps != self.engineMaps { self.startEngine() }
+                self.rebuildProfileMenu()
+                self.updateRemapSummary()
                 self.watchConfig()
             }
+            self.configReloadWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
         }
         src.setCancelHandler { close(fd) }
         src.resume()
@@ -273,6 +283,8 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         engineItem.action = nil
         engineItem.target = nil
         let maps = activeButtonMaps(loadConfig())
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        engineMaps = try? encoder.encode(maps)
         guard !maps.isEmpty else {
             engineItem.title = "按键映射：尚未配置"
             EngineState.writeStatus(["active": false, "reason": "no mappings configured", "mappings": 0, "axTrusted": axTrusted()])
@@ -302,7 +314,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             guard case let tr = dev.transport,
-                  let eng = makeRemapEngine(transport: tr, dev: dev, savedMap: devMap) else {
+                  let eng = try makeRemapEngine(transport: tr, dev: dev, savedMap: devMap) else {
                 engineItem.title = "按键映射：设备不支持"
                 EngineState.writeStatus(["active": false, "reason": "device exposes neither 0x8110 nor 0x1b04",
                                    "mappings": devMap.count, "axTrusted": axTrusted()])
