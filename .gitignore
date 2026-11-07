@@ -7,3 +7,6 @@ Nibble.app/
 windows/target/
 
 /work/
+/.nibble-arm64
+/.nibble-x86_64
+/signing-report.txt

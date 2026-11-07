@@ -150,55 +150,55 @@ func cmdDoctor() -> Int32 {
     var transports: [HIDPPTransport] = []
     do {
         transports = try openHIDPPTransports()
-        add("input-monitoring", true, "granted")
+        add("input-monitoring", true, "已授权")
         let desc = transports.map {
-            String(format: "%@ 046D:%04X", $0.isDirect ? "bluetooth" : "receiver", $0.productID)
+            String(format: "%@ 046D:%04X", $0.isDirect ? "蓝牙" : "接收器", $0.productID)
         }.joined(separator: " · ")
         add("transports", true, desc)
     } catch {
         let msg = "\(error)"
         if msg.contains("Input Monitoring") || msg.contains("E00002E2") {
             add("input-monitoring", false, msg,
-                fix: "System Settings > Privacy & Security > Input Monitoring > enable your terminal (or Nibble.app), then rerun")
-            add("transports", nil, "skipped — cannot open HID without permission")
+                fix: "系统设置 > 隐私与安全性 > 输入监控，允许终端或 Nibble 中文版后重试")
+            add("transports", nil, "已跳过：缺少输入监控权限，无法打开 HID")
         } else {
-            add("input-monitoring", nil, "unknown")
-            add("transports", false, msg, fix: "Plug in the USB receiver or connect the mouse over Bluetooth")
+            add("input-monitoring", nil, "未知")
+            add("transports", false, msg, fix: "插入 USB 接收器或通过蓝牙连接鼠标")
         }
     }
 
     if !transports.isEmpty {
         let devs = transports.flatMap { tr in discover(tr, maxIndex: 3).map { ($0.idx, $0.dev, tr, $0.ver) } }
         if let hit = devs.map({ (idx: $0.0, dev: $0.1, tr: $0.2, ver: $0.3) }).first {
-            let name = (try? hit.dev.name()) ?? "unknown"
-            add("device", true, "\(name) · HID++ \(hit.ver.major).\(hit.ver.minor) · \(hit.tr.isDirect ? "bluetooth" : "index \(hit.idx)")")
-            if devs.count > 1 { add("more-devices", nil, "\(devs.count - 1) more awake device(s) found") }
+            let name = (try? hit.dev.name()) ?? "未知"
+            add("device", true, "\(name) · HID++ \(hit.ver.major).\(hit.ver.minor) · \(hit.tr.isDirect ? "蓝牙" : "设备索引 \(hit.idx)")")
+            if devs.count > 1 { add("more-devices", nil, "\(devs.count - 1) 个其他已唤醒设备") }
             if let b = try? hit.dev.battery() {
-                add("battery", b.percent > 10 || b.charging, "\(b.percent)% \(b.charging ? "charging" : "discharging") (\(b.source))",
-                    fix: b.percent <= 10 && !b.charging ? "Charge the mouse" : nil)
+                add("battery", b.percent > 10 || b.charging, "\(b.percent)% \(b.charging ? "充电中" : "放电中") (\(b.source))",
+                    fix: b.percent <= 10 && !b.charging ? "请给鼠标充电" : nil)
             }
             let remapCapable = hit.dev.has(0x8110) || hit.dev.has(0x1b04)
             add("remap-capable", remapCapable,
-                hit.dev.has(0x8110) ? "0x8110 MouseButtonSpy (G-series)" :
-                hit.dev.has(0x1b04) ? "0x1b04 ReprogControlsV4 (MX-series)" : "neither feature present")
+                hit.dev.has(0x8110) ? "0x8110 MouseButtonSpy（G 系）" :
+                hit.dev.has(0x1b04) ? "0x1b04 ReprogControlsV4（MX 系）" : "设备未提供这两种按键功能")
         } else {
-            add("device", false, "transport present but no awake device", fix: "Move the mouse to wake it, then rerun")
+            add("device", false, "Transport 已发现，但没有已唤醒设备", fix: "移动鼠标唤醒后重试")
         }
     }
 
     let cfg = loadConfig()
     let mapCount = activeButtonMaps(cfg).values.reduce(0, { $0 + $1.count })
     let profiles = profileNames(cfg)
-    let profileNote = profiles.count > 1 ? " · profile \(currentProfileName(cfg)) of \(profiles.count)" : ""
+    let profileNote = profiles.count > 1 ? " · 配置方案 \(currentProfileName(cfg))，共 \(profiles.count) 个" : ""
     // 「解不開」和「沒建立」是兩種狀態，處理方式完全不同——而 doctor 是卡住的人第一個跑的東西。
     // 混在一起會把人導向 `nibble config init`，而那個指令現在（正確地）會拒絕動這個檔案
     let cfgExists = FileManager.default.fileExists(atPath: bmConfigURL.path)
     add("config", cfg != nil,
-        cfg != nil ? "\(bmConfigURL.path) · \(mapCount) button mapping(s)\(profileNote)"
-          : (cfgExists ? "\(bmConfigURL.path) exists but could not be parsed — Nibble refuses to overwrite it"
-                       : "not created"),
+        cfg != nil ? "\(bmConfigURL.path) · \(mapCount) 项按键映射\(profileNote)"
+          : (cfgExists ? "\(bmConfigURL.path) 存在但解析失败，已拒绝覆盖"
+                       : "尚未创建"),
         fix: cfg != nil ? nil
-          : (cfgExists ? "fix the JSON by hand (or move it aside), then rerun" : "nibble config init"))
+          : (cfgExists ? "请修复 JSON 或先备份再移开文件，然后重试" : "nibble config init"))
 
     // 鎖檔而非 pgrep：doctor 自己也是同一個 binary，比對程序名會把自己算成選單列
     let menubarRunning = menuBarRunning()
@@ -210,46 +210,47 @@ func cmdDoctor() -> Int32 {
         // 少了這個 && 就會出現「引擎 ✅ 執行中、選單列 ❌ 沒在跑」這種自相矛盾的診斷
         let active = (st["active"] as? Bool ?? false) && menubarRunning
         let reason = menubarRunning
-            ? (st["reason"] as? String ?? "menu bar app has not reported yet")
-            : "menu bar not running — the engine died with it"
-        add("remap-engine", active, active ? "running · \(st["mappings"] as? Int ?? 0) mapping(s) · \(st["path"] as? String ?? "")" : reason,
+            ? (st["reason"] as? String ?? "菜单栏尚未上报状态")
+            : "菜单栏未运行，映射引擎已停止"
+        add("remap-engine", active, active ? "运行中 · \(st["mappings"] as? Int ?? 0) 项映射 · \(st["path"] as? String ?? "")" : engineReasonLabel(reason),
             // 選單列明明開著卻叫人「去開選單列」是先前這裡的錯字面值：
             // 引擎失敗最常見的原因是滑鼠睡著，而它自己會退避重試
             fix: active ? nil : (st["fix"] as? String
-                ?? (menubarRunning ? "wake the mouse — the engine retries on its own"
-                                   : "start the menu bar app: open Nibble.app")))
+                ?? (menubarRunning ? "唤醒鼠标，引擎会自动退避重试"
+                                   : "请打开 Nibble 中文版菜单栏程序")))
         if let fired = st["lastFiredButton"] as? String {
             add("last-remap-fired", nil,
-                "\(fired) → \(st["lastFiredAction"] as? String ?? "?") at \(st["lastFiredAt"] as? String ?? "?")")
+                "\(fired) → \(st["lastFiredAction"] as? String ?? "未知")，时间 \(st["lastFiredAt"] as? String ?? "未知")")
         }
         if let last = st["lastEventButton"] as? String {
             add("last-unmapped-press", nil,
-                "\(last) (bit \(st["lastEventBit"] as? Int ?? -1), mask \(st["lastEventMask"] as? String ?? "?"))")
+                "\(last) (bit \(st["lastEventBit"] as? Int ?? -1), mask \(st["lastEventMask"] as? String ?? "未知"))")
         }
     }
 
     add("menubar", mapCount > 0 ? menubarRunning : nil,
-        menubarRunning ? "running (remap engine host)" : "not running",
-        fix: (mapCount > 0 && !menubarRunning) ? "nibble menubar &   (or open Nibble.app)" : nil)
+        menubarRunning ? "运行中（按键引擎宿主）" : "未运行",
+        fix: (mapCount > 0 && !menubarRunning) ? "nibble menubar &（或打开 Nibble 中文版）" : nil)
 
     // 開機自動啟動是改鍵能不能撐過重開機的關鍵，但它綁在 .app bundle 上，
     // 所以從終端機跑 doctor 時只能報告「無法從這裡判斷」
     // 被系統擋住是真的壞了，該讓 `doctor --json` 的 failed 數字反映出來；
     // 「使用者還沒打開」則不是故障
     add("login-startup", LoginItem.needsApproval ? false : nil,
-        LoginItem.supported ? LoginItem.note : "not visible from the CLI — check Nibble.app > Settings > General",
+        LoginItem.supported ? LoginItem.note : "裸 CLI 无法查询，请在 Nibble 中文版 > 设置 > 通用中检查",
         // 被系統設定擋住時，重新註冊沒有用——那句 fix 會把人帶去錯的地方
-        fix: LoginItem.needsApproval ? "System Settings > General > Login Items > enable Nibble"
+        fix: LoginItem.needsApproval ? "系统设置 > 通用 > 登录项，启用 Nibble 中文版"
            : (LoginItem.supported && !LoginItem.enabled)
-            ? "nibble startup on   (or tick “Start Nibble at login” in Settings > General)" : nil)
+            ? "nibble startup on（或在设置中勾选“登录时启动 Nibble”）" : nil)
 
     if let error = EngineState.read()["replayUpdateError"] as? String {
         add("replay-update", false, error, fix: "检查后台授权后运行 nibble replay install；失败时保留完整错误输出")
     }
     let replay = ReplayManager().diagnostics()
+    add("login-replay", nil, (replay["plistExists"] as? Bool == true) ? "plist 已保存；加载、授权和执行结果见下方" : "尚未安装")
     add("replay-plist", nil, "\(replay["plistExists"]!) · \(replayPlistURL.path)")
     add("replay-authorization", replay["authorization"] as? String == "requiresApproval" ? false : nil,
-        "\(replay["authorization"]!)", fix: "requiresApproval" == replay["authorization"] as? String
+        authorizationLabel(replay["authorization"] as? String ?? "unknown"), fix: "requiresApproval" == replay["authorization"] as? String
             ? "系统设置 > 通用 > 登录项，允许 Nibble 中文版后台运行" : nil)
     add("replay-loaded", nil, "\(replay["loaded"]!)（一次性任务加载不代表正在执行）")
     if let last = replay["lastRun"] as? [String: Any] {
@@ -258,7 +259,7 @@ func cmdDoctor() -> Int32 {
     } else { add("replay-last-run", nil, "暂无执行记录，不能据 plist 判断执行成功") }
 
     let notifyLimit = lowBatteryThreshold(cfg)
-    add("low-battery-alert", nil, notifyLimit.map { "below \($0)%" } ?? "off")
+    add("low-battery-alert", nil, notifyLimit.map { "低于 \($0)%" } ?? "关闭")
 
     let failed = checks.filter { $0["status"] as? String == "fail" }.count
     if jsonMode {
@@ -269,13 +270,13 @@ func cmdDoctor() -> Int32 {
         let width = (checks.compactMap { ($0["check"] as? String)?.count }.max() ?? 16) + 2
         print("Nibble doctor v\(NIBBLE_VERSION)\n")
         for c in checks {
-            let s = c["status"] as? String ?? "?"
+            let s = c["status"] as? String ?? "未知"
             let icon = s == "ok" ? "✅" : s == "fail" ? "❌" : "•"
             let name = (c["check"] as? String ?? "").padding(toLength: width, withPad: " ", startingAt: 0)
             print(" \(icon) \(name)\(c["detail"] as? String ?? "")")
             if let fix = c["fix"] as? String { print("      → \(fix)") }
         }
-        print("\n \(failed == 0 ? "All good." : "\(failed) issue(s) — fix the first arrow above and rerun.")")
+        print("\n \(failed == 0 ? "未发现已检测项目的故障；未验证项请查看上方说明。" : "发现 \(failed) 项问题，请按上方第一条建议处理后重试。")")
     }
     return failed == 0 ? 0 : 1
 }
@@ -556,6 +557,7 @@ func cmdReplay(_ args: [String]) -> Int32 {
         case "install":
             guard let exe = Bundle.main.executablePath else { throw ReplayFailure("无法确定可执行文件路径") }
             let warnings = try manager.install(executable: exe)
+            EngineState.clear(["replayUpdateError"])
             print("✅ 已注册登录恢复设置：\(manager.env.plist.path)")
             for warning in warnings { print("⚠️ \(warning)") }
             return 0
@@ -630,12 +632,12 @@ func uiSetRGB(_ dev: HIDPPDevice, kind: String) throws -> Int {
 func cmdStartup(_ args: [String]) -> Int32 {
     let want = args.first?.lowercased()
     if let want, !["on", "off", "true", "false", "enable", "disable"].contains(want) {
-        print("usage: nibble startup [on|off]   (also accepts true/false, enable/disable)")
+        print("用法：nibble startup [on|off]（也接受 true/false、enable/disable）")
         return 64
     }
     guard LoginItem.supported else {
         // 從 repo 或 /usr/local/bin 跑的裸 binary 沒有 bundle 可以註冊
-        let msg = "startup needs the app bundle — run `make install-app`, then "
+        let msg = "登录启动需要已安装的 app，请运行 "
                 + "/Applications/Nibble.app/Contents/MacOS/nibble startup on"
         if jsonMode { emitJSON(["error": msg, "code": "not-bundled"]) } else { print(msg) }
         return 1

@@ -76,7 +76,9 @@ install: nibble
 uninstall:
 	@test -x "$(APP_DEST)/$(APP)/Contents/MacOS/nibble" || { echo "请使用已安装的中文版应用解除服务后再删除；未找到应用"; exit 1; }
 	"$(APP_DEST)/$(APP)/Contents/MacOS/nibble" uninstall-services
-	rm -f $(PREFIX)/bin/nibble
+	@if [ -L "$(PREFIX)/bin/nibble" ] && [ "$$(readlink "$(PREFIX)/bin/nibble")" = "$(APP_DEST)/$(APP)/Contents/MacOS/nibble" ]; then \
+		rm -f "$(PREFIX)/bin/nibble"; \
+	else echo "kept: CLI 文件或链接归属未确认，未删除 $(PREFIX)/bin/nibble"; fi
 	rm -rf "$(APP_DEST)/$(APP)"
 	@echo "kept: ~/.config/nibble.json and ~/.config/nibble/backups (your settings and onboard dumps)"
 

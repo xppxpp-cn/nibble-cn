@@ -1,5 +1,5 @@
 // L10n.swift — machine-readable output helpers.
-// UI language is English only, by design: one string per message, no locale switching.
+// 用户可见诊断使用简体中文，命令、配置键和 JSON 字段保持兼容。
 import Foundation
 
 /// `--json`: read commands emit machine-readable output for scripts and agents.

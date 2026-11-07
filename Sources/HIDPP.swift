@@ -80,11 +80,11 @@ public enum HIDPPError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .timeout: return "device did not respond (timeout)"
-        case .deviceOffline(let c): return "device offline or asleep (err 0x\(String(format: "%02X", c))) — move the mouse and retry"
-        case .receiverError(let c): return "receiver error 0x\(String(format: "%02X", c))"
-        case .protocolError(let c): return "HID++ protocol error 0x\(String(format: "%02X", c))"
-        case .featureUnsupported(let f): return "device does not support feature 0x\(String(format: "%04X", f))"
+        case .timeout: return "设备未响应（超时）"
+        case .deviceOffline(let c): return "设备离线或休眠（错误 0x\(String(format: "%02X", c))）— 请移动鼠标唤醒后重试"
+        case .receiverError(let c): return "接收器错误 0x\(String(format: "%02X", c))"
+        case .protocolError(let c): return "HID++ 协议错误 0x\(String(format: "%02X", c))"
+        case .featureUnsupported(let f): return "设备不支持 HID++ 功能 0x\(String(format: "%04X", f))"
         case .transport(let m): return m
         }
     }

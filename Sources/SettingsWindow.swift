@@ -246,7 +246,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             .foregroundColor: NSColor.secondaryLabelColor,
         ]))
         aboutButton.attributedTitle = footer
-        aboutButton.toolTip = "github.com/ben0128/nibble — MIT"
+        aboutButton.toolTip = "github.com/xppxpp-cn/nibble-cn — MIT，基于 ben0128/nibble"
         aboutButton.setContentHuggingPriority(.required, for: .horizontal)
         aboutButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -403,7 +403,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     @objc private func openRepo() {
-        NSWorkspace.shared.open(URL(string: "https://github.com/ben0128/nibble")!)
+        NSWorkspace.shared.open(URL(string: "https://github.com/xppxpp-cn/nibble-cn")!)
     }
 
     private func sectionLabel(_ text: String) -> NSTextField {
@@ -605,18 +605,7 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         } else {
             let reason = st["reason"] as? String ?? "菜单栏尚未上报状态"
             // Keep machine-readable engine reasons in English; translate only the UI.
-            let readableReason: String
-            switch reason {
-            case "no mappings configured": readableReason = "尚未配置按键映射"
-            case "Accessibility permission not granted": readableReason = "未授权辅助功能权限"
-            case "device exposes neither 0x8110 nor 0x1b04": readableReason = "设备不支持按键映射"
-            case "device disconnected — waiting for reconnect": readableReason = "设备已断开，等待重新连接"
-            case "paused by user": readableReason = "用户已暂停映射"
-            default:
-                readableReason = reason.hasPrefix("no mappings for ")
-                    ? "当前设备没有配置按键映射"
-                    : reason
-            }
+            let readableReason = engineReasonLabel(reason)
             // 尚未配置按键不是故障，不显示红色错误状态。
             setHealth(engineValue, ok: reason.contains("no mappings") ? nil : false, readableReason)
             engineFix.isHidden = true

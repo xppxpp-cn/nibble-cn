@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "fix/nibble-*"]
 
 permissions:
   contents: read
@@ -39,6 +39,8 @@ jobs:
           test "$BUNDLE_ID" = "com.xppxpp.nibblecn"
           DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw -o - Nibble.app/Contents/Info.plist)"
           test "$DISPLAY_NAME" = "Nibble 中文版"
+          scripts/verify-release.sh
+          codesign -d -r- --verbose=4 Nibble.app 2> signing-report.txt
 
       - name: Package application
         run: |
@@ -49,6 +51,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Nibble-zh-CN-macOS-universal
-          path: Nibble-zh-CN-macOS-universal.zip
+          path: |
+            Nibble-zh-CN-macOS-universal.zip
+            signing-report.txt
           if-no-files-found: error
           retention-days: 30

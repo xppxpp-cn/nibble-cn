@@ -1,3 +1,5 @@
+> 中文 Fork：安装、升级、权限、Replay 和卸载请优先阅读 [简体中文说明](README.zh-CN.md)。本页保留上游项目介绍；其中上游 Homebrew 命令不用于安装本中文版。
+
 # Nibble 🖱️
 
 Lightweight, zero-dependency Logitech mouse control for macOS. Single binary, an under-1-MB download. No daemon, no telemetry, no account.

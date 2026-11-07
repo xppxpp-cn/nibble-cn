@@ -135,6 +135,16 @@ do {
            "a device with neither button feature gets no engine")
 }
 
+do {
+    let transport = MockTransport()
+    let device = HIDPPDevice(transport: transport, index: 1)
+    do {
+        _ = try makeRemapEngine(transport: transport, dev: device,
+                               savedMap: ["G7": ButtonAction(type: "disable")])
+        expect(false, "transient feature discovery failure must propagate for retry")
+    } catch { expect(true, "feature discovery failure is not mistaken for unsupported hardware") }
+}
+
 // MARK: - 電池電壓換算
 
 section("battery voltage curve")

@@ -116,6 +116,19 @@ func runReplayTests() {
         try manager.reconcile(executable: "/bin/cat")
         expect(fake.commands.isEmpty, "another executable path never takes over registration")
     } catch { expect(false, "upgrade fixture: \(error)") }
+    do {
+        var (manager, fake) = setup("concurrent")
+        let other = manager
+        var rejected = false
+        manager.env.write = { data, url in
+            do { _ = try other.install(executable: "/bin/echo") }
+            catch { rejected = true }
+            try data.write(to: url, options: .atomic)
+        }
+        _ = try manager.install(executable: "/bin/echo")
+        expect(rejected, "concurrent install is rejected before touching launchd")
+        expectEqual(fake.commands.filter { $0[1] == "bootstrap" }.count, 1, "only one transaction registers")
+    } catch { expect(false, "concurrent fixture: \(error)") }
     let (manager, _) = setup("XML")
     expect(!manager.legacyOwned(legacy("/unverifiable/CLI/nibble")), "legacy CLI without verifiable identity is preserved")
     expectEqual(Distribution.replayLabel, "com.xppxpp.nibblecn.replay", "CLI uses fixed Chinese identity without Bundle.main")

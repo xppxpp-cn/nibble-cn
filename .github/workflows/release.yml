@@ -30,6 +30,8 @@ jobs:
           test "$BUNDLE_ID" = "com.xppxpp.nibblecn"
           DISPLAY_NAME="$(plutil -extract CFBundleDisplayName raw -o - Nibble.app/Contents/Info.plist)"
           test "$DISPLAY_NAME" = "Nibble 中文版"
+          scripts/verify-release.sh
+          codesign -d -r- --verbose=4 Nibble.app 2> signing-report.txt
       - name: Create ZIP archive
         run: |
           ditto -c -k --keepParent Nibble.app Nibble-zh-CN-macOS-universal.zip
@@ -38,6 +40,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" Nibble-zh-CN-macOS-universal.zip \
+          gh release create "$GITHUB_REF_NAME" Nibble-zh-CN-macOS-universal.zip signing-report.txt \
             --title "Nibble 中文版 $GITHUB_REF_NAME" \
             --notes "个人使用的简体中文本地化版本；保留上游设备功能和配置格式。自签 / ad-hoc 构建，未经 Apple 公证。"

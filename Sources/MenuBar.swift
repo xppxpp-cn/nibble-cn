@@ -195,7 +195,10 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if runningFromAppBundle(), Bundle.main.bundleIdentifier == Distribution.bundleID,
            let executable = Bundle.main.executablePath {
             DispatchQueue.main.async {
-                do { try ReplayManager().reconcile(executable: executable) }
+                do {
+                    try ReplayManager().reconcile(executable: executable)
+                    EngineState.clear(["replayUpdateError"])
+                }
                 catch {
                     EngineState.write(["replayUpdateError": "\(error)"])
                     fputs("Replay 更新失败：\(error)\n", stderr)

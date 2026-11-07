@@ -30,7 +30,7 @@ enum LoginItem {
     /// 分三個 property 各問一次 SMAppService 等於每次刷新都跟 servicemanagementd
     /// 來回三趟，而這個刷新掛在 45 秒的計時器和每次視窗變成前景上。
     static var snapshot: (supported: Bool, enabled: Bool, note: String) {
-        guard supported else { return (false, false, "needs /Applications/Nibble.app — run `make install-app`") }
+        guard supported else { return (false, false, "需要从已安装的 Nibble 中文版 app 执行") }
         let st = SMAppService.mainApp.status
         return (true, st == .enabled, describe(st))
     }
@@ -41,7 +41,7 @@ enum LoginItem {
         // 實測：從未註冊過的 app 回報 .notFound，不是 .notRegistered。把它當成「還沒打開」，
         // 不然每個沒用過這個功能的人都會看到一句「bundle 不見了」的假警告
         case .notRegistered, .notFound: return "off"
-        case .requiresApproval: return "blocked in System Settings › General › Login Items"
+        case .requiresApproval: return "已被系统阻止，请在系统设置 › 通用 › 登录项中允许"
         @unknown default:       return "unknown"
         }
     }
@@ -67,6 +67,6 @@ enum LoginItemError: Error, CustomStringConvertible {
     case notBundled
 
     var description: String {
-        "login at startup needs the app bundle: make install-app, then open /Applications/Nibble.app"
+        "登录启动需要 app bundle，请打开已安装的 Nibble 中文版"
     }
 }
