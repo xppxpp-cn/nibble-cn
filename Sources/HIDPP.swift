@@ -179,6 +179,10 @@ public final class HIDPPDevice {
         return r[0] == 0 ? nil : r[0]
     }
 
+    /// Receiver slots can survive a wireless session reset. Resolve feature indexes
+    /// afresh before recovery writes, never send an old index to another feature.
+    public func invalidateFeatureCache() { featureCache.removeAll() }
+
     public func has(_ feature: UInt16) -> Bool {
         // try? 會把 UInt8?? 攤平成 UInt8?：nil = 查詢失敗「或」不支援，語意上都算沒有
         (try? featureIndex(of: feature)) != nil

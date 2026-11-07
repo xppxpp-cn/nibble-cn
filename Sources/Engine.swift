@@ -10,7 +10,7 @@ enum EngineState {
         .appendingPathComponent(".config/nibble/engine.json")
 
     /// 狀態鍵每次整組換掉——用合併的話舊值會殘留（例如成功後還掛著上一次的 fix）
-    private static let statusKeys = ["active", "reason", "mappings", "axTrusted", "device", "path", "fix"]
+    private static let statusKeys = ["active", "reason", "mappings", "axTrusted", "device", "path", "fix", "deviceIndex", "receiverPID", "link", "lastHealthChange"]
 
     private static let queue = DispatchQueue(label: "com.ben0128.nibble.enginestate")
 
@@ -40,6 +40,14 @@ enum EngineState {
         if let d = try? JSONSerialization.data(withJSONObject: payload,
                                                options: [.prettyPrinted, .sortedKeys]) {
             try? d.write(to: url, options: .atomic)   // 換檔而非就地覆寫，讀者不會看到半份檔案
+        }
+    }
+
+    static func clear(_ keys: [String]) {
+        queue.async {
+            var payload = readUnlocked()
+            for key in keys { payload.removeValue(forKey: key) }
+            persistUnlocked(payload)
         }
     }
 
@@ -104,7 +112,7 @@ final class MXRemapEngine: RemapEngineProtocol {
     var executeAction: (ButtonAction) -> Void = performButtonAction
     private let dev: HIDPPDevice
     private let transport: HIDPPTransport
-    private let featIdx: UInt8
+    private var featIdx: UInt8
     private let mappings: [UInt16: ButtonAction]   // CID → 動作
     private var pressed: Set<UInt16> = []
     private var systemSleeping = false
@@ -145,7 +153,7 @@ final class MXRemapEngine: RemapEngineProtocol {
 
     func start() throws {
         started = true
-        do { for cid in mappings.keys { try dev.setDivert(cid: cid, on: true) } }
+        do { try reapply() }
         catch { stop(); throw error }
         transport.onReport = { [weak self] p in self?.handle(p) }
         active = true
@@ -162,6 +170,9 @@ final class MXRemapEngine: RemapEngineProtocol {
 
     private func reapply() throws {
         guard started else { return }
+        dev.invalidateFeatureCache()
+        guard let index = try dev.featureIndex(of: 0x1b04) else { throw HIDPPError.featureUnsupported(0x1b04) }
+        featIdx = index
         for cid in mappings.keys { try dev.setDivert(cid: cid, on: true) }
         for cid in mappings.keys where try !dev.isDiverted(cid: cid) {
             throw HIDPPError.transport("divert readback mismatch")
@@ -171,6 +182,9 @@ final class MXRemapEngine: RemapEngineProtocol {
 
     func checkHealth(rearm: Bool) throws {
         guard started, active else { return }
+        dev.invalidateFeatureCache()
+        guard let index = try dev.featureIndex(of: 0x1b04) else { throw HIDPPError.featureUnsupported(0x1b04) }
+        featIdx = index
         for cid in mappings.keys where try !dev.isDiverted(cid: cid) {
             recover(reason: "divert state lost"); return
         }
@@ -209,7 +223,7 @@ final class RemapEngine: RemapEngineProtocol {
     var executeAction: (ButtonAction) -> Void = performButtonAction
     private let dev: HIDPPDevice
     private let transport: HIDPPTransport
-    private let spyIdx: UInt8
+    private var spyIdx: UInt8
     private let mappings: [Int: ButtonAction]   // 0-based 鍵序 → 動作
     private var original: [UInt8] = []          // 進場前的 remap 表（退場還原）
     private var patched: [UInt8] = []           // 我們寫入的表（重連重掛用）
@@ -260,8 +274,7 @@ final class RemapEngine: RemapEngineProtocol {
         for (i, _) in mappings where i >= 2 && i < 16 { patched[i] = 0 }
         started = true
         do {
-            try dev.buttonSpySetRemapping(patched)
-            try dev.buttonSpyStart()
+            try reapply()
         } catch { stop(); throw error }
         transport.onReport = { [weak self] p in self?.handle(p) }
         active = true
@@ -280,6 +293,20 @@ final class RemapEngine: RemapEngineProtocol {
     /// 滑鼠睡醒／斷電重連（0x41 通知）後，remap 表已被裝置重置——重掛
     private func reapply() throws {
         guard started else { return }
+        dev.invalidateFeatureCache()
+        guard let index = try dev.featureIndex(of: 0x8110) else { throw HIDPPError.featureUnsupported(0x8110) }
+        spyIdx = index
+        let current = try dev.buttonSpyRemappingFull()
+        guard current.count == 16 else { throw HIDPPError.transport("short spy remapping table") }
+        // Preserve current unowned slots, including primary buttons and profile changes.
+        // Retain the pre-diversion value for our zeroed slots across partial retries.
+        patched = current
+        for i in current.indices {
+            if mappings[i] != nil {
+                if current[i] != 0 { original[i] = current[i] }
+                patched[i] = 0
+            } else { original[i] = current[i] }
+        }
         try dev.buttonSpySetRemapping(patched)
         try dev.buttonSpyStart()
         guard try dev.buttonSpyRemappingFull() == patched else {
@@ -290,6 +317,9 @@ final class RemapEngine: RemapEngineProtocol {
 
     func checkHealth(rearm: Bool) throws {
         guard started, active else { return }
+        dev.invalidateFeatureCache()
+        guard let index = try dev.featureIndex(of: 0x8110) else { throw HIDPPError.featureUnsupported(0x8110) }
+        spyIdx = index
         if try dev.buttonSpyRemappingFull() != patched {
             recover(reason: "spy remapping state lost")
         } else if rearm { recover(reason: "input resumed after idle") }

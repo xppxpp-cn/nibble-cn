@@ -17,13 +17,16 @@ final class StatefulMouse: HIDPPTransport {
     var writes = 0
     var calls = 0
     var mx = false
+    var featureIndex: UInt8?
+    var seenFeatures: [UInt8] = []
     func roundTrip(request p: [UInt8], preferLong: Bool, timeout: TimeInterval,
                    match: ([UInt8]) -> Bool) throws -> [UInt8] {
         calls += 1
+        seenFeatures.append(p[1])
         if offline { throw HIDPPError.timeout }
         let fn = p[2] >> 4
         var r: [UInt8] = [0, 0, 0]
-        if p[1] == 0 { r = [mx ? 7 : 6, 0, 0] }
+        if p[1] == 0 { r = [featureIndex ?? (mx ? 7 : 6), 0, 0] }
         else if mx {
             let cid = UInt16(p[3]) << 8 | UInt16(p[4])
             if fn == 3 {
@@ -140,10 +143,14 @@ func runRecoveryTests() {
             expectEqual(tr.writes, writes, "healthy checks do not rewrite mouse state")
             // Mouse resets its runtime state without sending a connection notification.
             tr.table = Array(UInt8(1)...UInt8(16)); tr.diverted = []
+            tr.table[8] = 12 // a profile's unowned slot must not be overwritten
+            tr.featureIndex = mx ? 10 : 9
             try engine.checkHealth(rearm: false)
             expect(!engine.active, "lost device state invalidates active")
             pumpRecovery()
             expect(engine.active, "no-0x41 state loss recovers automatically")
+            expect(tr.seenFeatures.contains(mx ? 10 : 9), "recovery resolves moved feature indexes afresh")
+            if !mx { expectEqual(tr.table[8], 12, "recovery preserves unowned profile slots") }
             expect(mx ? tr.diverted.contains(0x53) : tr.table[6] == 0 && tr.spy,
                    "recovery restores the actual mouse state")
             expectEqual(Array(tr.table.prefix(2)), [1, 2], "primary buttons remain untouched")
@@ -153,10 +160,10 @@ func runRecoveryTests() {
                 sessionChanges += 1
             }
             let beforeSessionChange = tr.writes
+            let oldCallback = tr.onReport
             tr.onReport?([1, 0x41, 0, 0, 0])
             expectEqual(sessionChanges, 1, "0x41 requests fresh device discovery")
             expectEqual(tr.writes, beforeSessionChange, "session invalidation performs no stale device writes")
-            let oldCallback = tr.onReport
             engine.stop()
             let stoppedWrites = tr.writes
             oldCallback?([1, 0x41, 0, 0, 0]); pumpRecovery()
