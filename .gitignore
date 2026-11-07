@@ -5,3 +5,5 @@ Nibble.app/
 .build/
 .nibble-tests
 windows/target/
+
+/work/

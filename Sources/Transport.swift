@@ -39,6 +39,9 @@ public final class ReceiverTransport: HIDPPTransport {
     public let longOnly: Bool
     public let transportKind: String
     private let inBuf: UnsafeMutablePointer<UInt8>
+    private var waiting = false
+    private var removed = false
+    private let runLoop = CFRunLoopGetCurrent()!
     private var inbox: [[UInt8]] = []
     public let productID: Int
     /// 事件旁聽：每一則進來的 report（含裝置主動通知）都會呼叫——改鍵引擎靠這個吃 spy 事件
@@ -109,20 +112,24 @@ public final class ReceiverTransport: HIDPPTransport {
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(device, inBuf, 64, ReceiverTransport.reportCB, ctx)
         IOHIDDeviceRegisterRemovalCallback(device, ReceiverTransport.removalCB, ctx)
-        IOHIDDeviceScheduleWithRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceScheduleWithRunLoop(device, runLoop, CFRunLoopMode.commonModes.rawValue)
     }
 
     deinit {
         // 長駐模式（menubar）會反覆開關 transport——不清乾淨會累積 kernel 資源
         // （manager 由 HIDManagerHolder 在最後一個 transport 釋放時一起關）
-        IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDDeviceRegisterInputReportCallback(device, inBuf, 64, nil, nil)
+        IOHIDDeviceRegisterRemovalCallback(device, nil, nil)
+        IOHIDDeviceUnscheduleFromRunLoop(device, runLoop, CFRunLoopMode.commonModes.rawValue)
         IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
         inBuf.deallocate()
     }
 
     private static let removalCB: IOHIDCallback = { ctx, _, _ in
         guard let ctx = ctx else { return }
-        Unmanaged<ReceiverTransport>.fromOpaque(ctx).takeUnretainedValue().onRemoval?()
+        let me = Unmanaged<ReceiverTransport>.fromOpaque(ctx).takeUnretainedValue()
+        me.removed = true
+        me.onRemoval?()
     }
 
     private static let reportCB: IOHIDReportCallback = { ctx, _, _, _, reportID, ptr, len in
@@ -156,9 +163,16 @@ public final class ReceiverTransport: HIDPPTransport {
 
     public func roundTrip(request payload: [UInt8], preferLong: Bool, timeout: TimeInterval,
                           match: ([UInt8]) -> Bool) throws -> [UInt8] {
+        guard !removed else { throw HIDPPError.transport("HID device removed") }
+        guard !waiting else { throw HIDPPError.transport("reentrant HID++ transaction") }
+        waiting = true
+        defer { waiting = false }
+        // A previous timed-out transaction's response must not satisfy a new request.
+        inbox.removeAll()
         try send(payload, long: preferLong)
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            guard !removed else { throw HIDPPError.transport("HID device removed") }
             CFRunLoopRunInMode(.defaultMode, 0.02, true)
             if let i = inbox.firstIndex(where: match) {
                 return inbox.remove(at: i)

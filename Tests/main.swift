@@ -499,6 +499,8 @@ do {
     expectEqual(already.buttonProfiles?.count, 2, "and keeps every profile")
 }
 
+runRecoveryTests()
+
 // MARK: - 收尾
 
 print("")

@@ -287,6 +287,15 @@ public final class HIDPPDevice {
                      params: [UInt8(cid >> 8), UInt8(cid & 0xFF), flags, 0, 0, 0, 0])
     }
 
+    public func isDiverted(cid: UInt16) throws -> Bool {
+        let r = try call(feature: 0x1b04, function: 2,
+                         params: [UInt8(cid >> 8), UInt8(cid & 0xff)])
+        guard r.count >= 3, UInt16(r[0]) << 8 | UInt16(r[1]) == cid else {
+            throw HIDPPError.transport("invalid CID reporting response")
+        }
+        return r[2] & 1 != 0
+    }
+
     /// 列舉裝置上所有可程式化控制——改鍵 UI 的資料來源，換滑鼠自動適配
     public func controls() throws -> [ControlInfo] {
         guard let fi = try featureIndex(of: 0x1b04) else { throw HIDPPError.featureUnsupported(0x1b04) }

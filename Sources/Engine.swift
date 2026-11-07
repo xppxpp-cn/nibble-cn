@@ -6,7 +6,7 @@ import Foundation
 
 /// 引擎狀態寫到檔案：跨程序可讀，讓 `nibble doctor` 能診斷「引擎為什麼沒動」
 enum EngineState {
-    static let url = FileManager.default.homeDirectoryForCurrentUser
+    static var url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/nibble/engine.json")
 
     /// 狀態鍵每次整組換掉——用合併的話舊值會殘留（例如成功後還掛著上一次的 fix）
@@ -58,6 +58,13 @@ protocol RemapEngineProtocol: AnyObject {
     var active: Bool { get }
     func start() throws
     func stop()
+    var device: HIDPPDevice { get }
+    var onHealthChange: ((Bool, String) -> Void)? { get set }
+    var onReconnect: (() -> Void)? { get set }
+    func recover(reason: String)
+    func suspend()
+    func resume()
+    func checkHealth(rearm: Bool) throws
 }
 
 /// config 的 "G7" 之類鍵名 → spy 層的 0-based 索引。
@@ -65,7 +72,7 @@ protocol RemapEngineProtocol: AnyObject {
 func parseSpyButtonMap(_ savedMap: [String: ButtonAction]) -> [Int: ButtonAction] {
     var m: [Int: ButtonAction] = [:]
     for (key, action) in savedMap where key.hasPrefix("G") {
-        if let n = Int(key.dropFirst()), n >= 3 { m[n - 1] = action }
+        if let n = Int(key.dropFirst()), n >= 3, n <= 16 { m[n - 1] = action }
     }
     return m
 }
@@ -79,7 +86,7 @@ func makeRemapEngine(transport: HIDPPTransport, dev: HIDPPDevice,
     }
     if dev.has(0x1b04), let controls = try? dev.controls() {
         var m: [UInt16: ButtonAction] = [:]
-        for c in controls where c.divertable {
+        for c in controls where c.divertable && c.cid != 0x0050 && c.cid != 0x0051 {
             let name = HIDPP.cidNames[c.cid] ?? String(format: "CID 0x%04X", c.cid)
             if let action = savedMap[name] { m[c.cid] = action }
         }
@@ -92,48 +99,83 @@ func makeRemapEngine(transport: HIDPPTransport, dev: HIDPPDevice,
 /// 差異：divert 是逐 CID 設定；事件（fn0 divertedButtonsEvent）回傳「目前按住的 CID 清單」，
 /// 最多 4 個 16-bit CID，放開時該 CID 從清單消失。
 final class MXRemapEngine: RemapEngineProtocol {
+    var executeAction: (ButtonAction) -> Void = performButtonAction
     private let dev: HIDPPDevice
     private let transport: HIDPPTransport
     private let featIdx: UInt8
     private let mappings: [UInt16: ButtonAction]   // CID → 動作
     private var pressed: Set<UInt16> = []
+    private var systemSleeping = false
+    private var started = false
     private(set) var active = false
+    var device: HIDPPDevice { dev }
+    var onHealthChange: ((Bool, String) -> Void)?
+    var onReconnect: (() -> Void)?
+    private lazy var recovery = RemapRecovery(apply: { [weak self] in
+        try self?.reapply()
+    }, state: { [weak self] ok, reason in
+        self?.active = ok
+        self?.onHealthChange?(ok, reason)
+    }, reconnect: { [weak self] in self?.onReconnect?() })
+    func suspend() {
+        systemSleeping = true; recovery.suspend(); active = false
+        onHealthChange?(false, "system sleeping")
+    }
+    func resume() { systemSleeping = false; recovery.resume(); recover(reason: "system wake") }
+    func recover(reason: String) {
+        guard started, !systemSleeping else { return }
+        recovery.request(reason: reason)
+    }
 
     init?(transport: HIDPPTransport, dev: HIDPPDevice, mappings: [UInt16: ButtonAction]) {
         guard !mappings.isEmpty, let fi = try? dev.featureIndex(of: 0x1b04) else { return nil }
         self.transport = transport
         self.dev = dev
         self.featIdx = fi
-        self.mappings = mappings
+        self.mappings = mappings.filter { $0.key != 0x0050 && $0.key != 0x0051 }
     }
 
     var mappingCount: Int { mappings.count }
 
     func start() throws {
-        for cid in mappings.keys { try dev.setDivert(cid: cid, on: true) }
+        started = true
+        do { for cid in mappings.keys { try dev.setDivert(cid: cid, on: true) } }
+        catch { stop(); throw error }
         transport.onReport = { [weak self] p in self?.handle(p) }
         active = true
     }
 
     func stop() {
-        guard active else { return }
+        recovery.stop()
+        guard started else { return }
+        started = false
         transport.onReport = nil
         for cid in mappings.keys { try? dev.setDivert(cid: cid, on: false) }
         active = false
     }
 
-    private func reapply() {
-        guard active else { return }
-        for cid in mappings.keys { try? dev.setDivert(cid: cid, on: true) }
+    private func reapply() throws {
+        guard started else { return }
+        for cid in mappings.keys { try dev.setDivert(cid: cid, on: true) }
+        for cid in mappings.keys where try !dev.isDiverted(cid: cid) {
+            throw HIDPPError.transport("divert readback mismatch")
+        }
         pressed.removeAll()
     }
 
+    func checkHealth(rearm: Bool) throws {
+        guard started, active else { return }
+        for cid in mappings.keys where try !dev.isDiverted(cid: cid) {
+            recover(reason: "divert state lost"); return
+        }
+        if rearm { recover(reason: "input resumed after idle") }
+    }
+
     private func handle(_ p: [UInt8]) {
-        guard p.count >= 5, p[0] == dev.index else { return }
+        guard started, p.count >= 5, p[0] == dev.index else { return }
         if p[1] == 0x41 {
-            if p[3] & 0x40 == 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.reapply() }
-            }
+            if p[3] & 0x40 == 0 { recover(reason: "wireless reconnect") }
+            else { active = false; onHealthChange?(false, "wireless device asleep or disconnected") }
             return
         }
         guard p[1] == featIdx, p[2] == 0x00 else { return }   // divertedButtonsEvent
@@ -145,13 +187,14 @@ final class MXRemapEngine: RemapEngineProtocol {
             i += 2
         }
         for cid in now.subtracting(pressed) {   // 新按下的才觸發
-            if let a = mappings[cid] { performButtonAction(a) }
+            if let a = mappings[cid] { executeAction(a) }
         }
         pressed = now
     }
 }
 
 final class RemapEngine: RemapEngineProtocol {
+    var executeAction: (ButtonAction) -> Void = performButtonAction
     private let dev: HIDPPDevice
     private let transport: HIDPPTransport
     private let spyIdx: UInt8
@@ -161,7 +204,27 @@ final class RemapEngine: RemapEngineProtocol {
     private var prevMask: UInt16 = 0
     private var lastLog = Date.distantPast
     private var lastFiredLog = Date.distantPast
+    private var systemSleeping = false
+    private var started = false
     private(set) var active = false
+    var device: HIDPPDevice { dev }
+    var onHealthChange: ((Bool, String) -> Void)?
+    var onReconnect: (() -> Void)?
+    private lazy var recovery = RemapRecovery(apply: { [weak self] in
+        try self?.reapply()
+    }, state: { [weak self] ok, reason in
+        self?.active = ok
+        self?.onHealthChange?(ok, reason)
+    }, reconnect: { [weak self] in self?.onReconnect?() })
+    func suspend() {
+        systemSleeping = true; recovery.suspend(); active = false
+        onHealthChange?(false, "system sleeping")
+    }
+    func resume() { systemSleeping = false; recovery.resume(); recover(reason: "system wake") }
+    func recover(reason: String) {
+        guard started, !systemSleeping else { return }
+        recovery.request(reason: reason)
+    }
 
     init?(transport: HIDPPTransport, dev: HIDPPDevice, mappings: [Int: ButtonAction]) {
         // try? 把 UInt8?? 攤平成 UInt8?：nil = 查詢失敗或不支援
@@ -169,23 +232,29 @@ final class RemapEngine: RemapEngineProtocol {
         self.transport = transport
         self.dev = dev
         self.spyIdx = spy
-        self.mappings = mappings
+        self.mappings = mappings.filter { $0.key >= 2 && $0.key < 16 }
     }
 
     var mappingCount: Int { mappings.count }
 
     func start() throws {
         original = try dev.buttonSpyRemappingFull()
+        guard original.count == 16 else { throw HIDPPError.transport("short spy remapping table") }
         patched = original
-        for (i, _) in mappings where i < 16 { patched[i] = 0 }
-        try dev.buttonSpySetRemapping(patched)
-        try dev.buttonSpyStart()
+        for (i, _) in mappings where i >= 2 && i < 16 { patched[i] = 0 }
+        started = true
+        do {
+            try dev.buttonSpySetRemapping(patched)
+            try dev.buttonSpyStart()
+        } catch { stop(); throw error }
         transport.onReport = { [weak self] p in self?.handle(p) }
         active = true
     }
 
     func stop() {
-        guard active else { return }
+        recovery.stop()
+        guard started else { return }
+        started = false
         transport.onReport = nil
         try? dev.buttonSpyStop()
         try? dev.buttonSpySetRemapping(original)
@@ -193,20 +262,29 @@ final class RemapEngine: RemapEngineProtocol {
     }
 
     /// 滑鼠睡醒／斷電重連（0x41 通知）後，remap 表已被裝置重置——重掛
-    private func reapply() {
-        guard active else { return }
-        try? dev.buttonSpySetRemapping(patched)
-        try? dev.buttonSpyStart()
+    private func reapply() throws {
+        guard started else { return }
+        try dev.buttonSpySetRemapping(patched)
+        try dev.buttonSpyStart()
+        guard try dev.buttonSpyRemappingFull() == patched else {
+            throw HIDPPError.transport("spy remapping readback mismatch")
+        }
         prevMask = 0
     }
 
+    func checkHealth(rearm: Bool) throws {
+        guard started, active else { return }
+        if try dev.buttonSpyRemappingFull() != patched {
+            recover(reason: "spy remapping state lost")
+        } else if rearm { recover(reason: "input resumed after idle") }
+    }
+
     private func handle(_ p: [UInt8]) {
-        guard p.count >= 5, p[0] == dev.index else { return }
+        guard started, p.count >= 5, p[0] == dev.index else { return }
         // 連線通知：link 建立 → 延遲重掛（讓裝置先站穩）
         if p[1] == 0x41 {
-            if p[3] & 0x40 == 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.reapply() }
-            }
+            if p[3] & 0x40 == 0 { recover(reason: "wireless reconnect") }
+            else { active = false; onHealthChange?(false, "wireless device asleep or disconnected") }
             return
         }
         // spy 事件：featIdx == 0x8110 的 index、fnsw == 0x00（事件 0、swid 0）
@@ -218,7 +296,7 @@ final class RemapEngine: RemapEngineProtocol {
         let stamp = ISO8601DateFormatter().string(from: Date())
         for bit in 0..<16 where newly & (1 << bit) != 0 {
             if let a = mappings[bit] {
-                performButtonAction(a)
+                executeAction(a)
                 guard Date().timeIntervalSince(lastFiredLog) > 0.5 else { continue }
                 lastFiredLog = Date()
                 EngineState.write([

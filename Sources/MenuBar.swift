@@ -69,6 +69,11 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastIndex: UInt8 = 1
     private var lastRGB: String? = lastKnownRGB()   // 協定無法回讀，改用設定檔記著的最後套用值
     private var engine: RemapEngineProtocol?
+    private var systemSleeping = false
+    private var activityMonitor: Any?
+    private var localActivityMonitor: Any?
+    private var activityGate = RemapActivityGate()
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var lowBatteryLatch = LowBatteryLatch()
     /// 圖示轉紅的門檻，跟著低電量通知的設定走。每次 refresh() 重讀——
     /// 先前掛在 startEngine() 裡，而那條路在「沒有任何改鍵映射」時根本不會被走到
@@ -185,6 +190,29 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildProfileMenu()
         startEngine()
         watchConfig()
+        let mouseEvents: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .rightMouseDown,
+                                                  .otherMouseDown, .scrollWheel, .leftMouseDragged,
+                                                  .rightMouseDragged, .otherMouseDragged]
+        activityMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents) { [weak self] _ in
+            self?.mouseActivity()
+        }
+        localActivityMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents) { [weak self] event in
+            self?.mouseActivity(); return event
+        }
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers.append(center.addObserver(forName: NSWorkspace.willSleepNotification,
+                                                     object: nil, queue: .main) { [weak self] _ in
+            self?.systemSleeping = true
+            self?.engine?.suspend() // cancels pending work, no writes to a sleeping device
+        })
+        workspaceObservers.append(center.addObserver(forName: NSWorkspace.didWakeNotification,
+                                                     object: nil, queue: .main) { [weak self] _ in
+            self?.systemSleeping = false
+            HIDWorkQueue.shared.submit {
+                if let engine = self?.engine { engine.resume() }
+                else { self?.startEngine() }
+            }
+        })
         timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
             self?.refresh()
         }
@@ -232,6 +260,11 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// 改鍵引擎：讀 config 的 per-device 映射，掛上 spy 事件流（G 系路徑）
     private func startEngine() {
+        HIDWorkQueue.shared.submit { [weak self] in self?.startEngineNow() }
+    }
+
+    private func startEngineNow() {
+        guard !systemSleeping else { return }
         engine?.stop()
         engine = nil
         defer { updateRemapSummary() }
@@ -253,7 +286,7 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 EngineState.writeStatus(["active": false, "reason": "no mappings for \(devName)", "mappings": 0, "axTrusted": axTrusted()])
                 return
             }
-            let needsAX = devMap.values.contains { $0.type == "keys" || $0.type == "system" }
+            let needsAX = devMap.values.contains { $0.type == "keys" || $0.type == "system" || $0.type == "macro" }
             // 只在第一次跳系統授權對話框，之後靜靜重試就好
             if needsAX && !axTrusted(promptIfNeeded: !axPrompted) {
                 axPrompted = true
@@ -275,30 +308,59 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                    "mappings": devMap.count, "axTrusted": axTrusted()])
                 return
             }
+            eng.onHealthChange = { [weak self, weak eng] ok, reason in
+                guard let self, let eng, self.engine === eng else { return }
+                self.engineItem.title = ok ? "按键映射：✓ \(eng.mappingCount) 项已生效" : "按键映射：正在恢复"
+                EngineState.write(["active": ok, "reason": reason, "axTrusted": axTrusted(),
+                                   "lastHealthChange": ISO8601DateFormatter().string(from: Date())])
+                self.updateRemapSummary()
+            }
+            eng.onReconnect = { [weak self, weak eng] in
+                guard let self, let eng, self.engine === eng else { return }
+                self.engine = nil
+                eng.stop()
+                self.scheduleEngineRetry()
+            }
             try eng.start()
             engine = eng   // engine 持有 dev+transport → 事件流常駐
             // 裝置消失（藍牙斷線、拔接收器）沒有 0x41 通知可等：拆掉引擎讓重試退避接手，
             // 否則引擎看似在跑、實際永遠收不到事件（弱引用：引擎換代後舊 callback 自動失效）
             tr.onRemoval = { [weak self, weak eng] in
-                guard let self, let eng, self.engine === eng else { return }
-                self.engine = nil
-                eng.stop()
-                self.engineItem.title = "按键映射：设备断开，将重试"
-                EngineState.writeStatus(["active": false, "reason": "device disconnected — waiting for reconnect",
-                                         "axTrusted": axTrusted()])
-                self.updateRemapSummary()
-                self.scheduleEngineRetry()
+                HIDWorkQueue.shared.submit { [weak self, weak eng] in
+                    guard let self, let eng, self.engine === eng else { return }
+                    self.engine = nil
+                    eng.stop()
+                    self.engineItem.title = "按键映射：设备断开，将重试"
+                    EngineState.writeStatus(["active": false, "reason": "device disconnected — waiting for reconnect",
+                                             "axTrusted": axTrusted()])
+                    self.updateRemapSummary()
+                    self.scheduleEngineRetry()
+                }
             }
             engineRetryDelay = 4
             engineItem.title = "按键映射：✓ \(eng.mappingCount) 项已生效"
             EngineState.writeStatus(["active": true, "reason": "running", "mappings": eng.mappingCount,
                                "axTrusted": axTrusted(), "device": devName,
-                               "path": dev.has(0x8110) ? "0x8110 spy" : "0x1b04 divert"])
+                               "path": dev.has(0x8110) ? "0x8110 spy" : "0x1b04 divert",
+                               "deviceIndex": Int(dev.index), "receiverPID": tr.productID,
+                               "link": dev.index == 0xff ? "direct" : "receiver"])
         } catch {
             engineItem.title = "按键映射：❌ \(error)"
             EngineState.writeStatus(["active": false, "reason": "\(error)", "axTrusted": axTrusted(),
                                "mappings": maps.values.reduce(0, { $0 + $1.count })])
             scheduleEngineRetry()
+        }
+    }
+
+    private func mouseActivity() {
+        let signal = activityGate.activity(at: ProcessInfo.processInfo.systemUptime)
+        guard signal.check, !remapPaused, !systemSleeping else { return }
+        HIDWorkQueue.shared.submit { [weak self] in
+            guard let self else { return }
+            guard let engine = self.engine else { return } // startup retry has its own backoff
+            if !engine.active { engine.recover(reason: "input resumed"); return }
+            do { try engine.checkHealth(rearm: signal.rearm) }
+            catch { engine.recover(reason: "health check failed: \(error)") }
         }
     }
 
@@ -316,6 +378,10 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func togglePause() {
+        HIDWorkQueue.shared.submit { [weak self] in self?.togglePauseNow() }
+    }
+
+    private func togglePauseNow() {
         remapPaused.toggle()
         if remapPaused {
             engine?.stop()
@@ -396,6 +462,9 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let activityMonitor { NSEvent.removeMonitor(activityMonitor) }
+        if let localActivityMonitor { NSEvent.removeMonitor(localActivityMonitor) }
+        for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         engine?.stop()   // 還原 spy remap 表——退出後滑鼠回到原生行為
         if let p = settingsProcess, p.isRunning { p.terminate() }
     }
@@ -418,6 +487,9 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func openDevice() throws -> HIDPPDevice {
+        // Reuse the engine's live handle for menu reads/writes. Opening/closing another
+        // IOHIDDevice in this process must not disturb the persistent report pipeline.
+        if let engine { return engine.device }
         let (dev, idx) = try uiOpenDevice(preferred: lastIndex)
         lastIndex = idx
         return dev
@@ -458,6 +530,11 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refresh() {
+        HIDWorkQueue.shared.submit { [weak self] in self?.refreshNow() }
+    }
+
+    private func refreshNow() {
+        guard !systemSleeping else { return }
         // 一次讀設定檔，圖示門檻和通知門檻共用同一個值——兩者不同步過一次就再也對不回來
         let limit = lowBatteryThreshold(loadConfig())
         warnPercent = limit ?? defaultLowBatteryPercent
@@ -511,13 +588,10 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openInputMonitoring() { openInputMonitoringSettings() }
 
-    private func act(_ body: (HIDPPDevice) throws -> Void) {
-        do {
-            let dev = try openDevice()
-            try body(dev)
-            syncChecks(dev)
-        } catch {
-            detailItem.title = "❌ \(error)"
+    private func act(_ body: @escaping (HIDPPDevice) throws -> Void) {
+        HIDWorkQueue.shared.submit { [self] in
+            do { let dev = try openDevice(); try body(dev); syncChecks(dev) }
+            catch { detailItem.title = "❌ \(error)" }
         }
     }
 
@@ -526,8 +600,8 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         act { dev in
             var got = 0
             try uiHostFallback(dev) { got = try dev.setDPI(target) }
-            detailItem.title = got == target ? "DPI → \(got) ✓" : "⚠️ 期望值 \(target), 设备报告 \(got)"
-            flash(got == target ? "✓\(got)" : "⚠️\(got)")
+            self.detailItem.title = got == target ? "DPI → \(got) ✓" : "⚠️ 期望值 \(target), 设备报告 \(got)"
+            self.flash(got == target ? "✓\(got)" : "⚠️\(got)")
         }
     }
 
@@ -536,8 +610,8 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         act { dev in
             var got = 0
             try uiHostFallback(dev) { got = try dev.setReportRateHz(hz) }
-            detailItem.title = got == hz ? "报告率 → \(got) Hz ✓" : "⚠️ 期望值 \(hz), 设备报告 \(got)"
-            flash(got == hz ? "✓\(got)Hz" : "⚠️\(got)Hz")
+            self.detailItem.title = got == hz ? "报告率 → \(got) Hz ✓" : "⚠️ 期望值 \(hz), 设备报告 \(got)"
+            self.flash(got == hz ? "✓\(got)Hz" : "⚠️\(got)Hz")
         }
     }
 
@@ -546,9 +620,9 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let title = sender.title
         act { dev in
             let applied = try uiSetRGB(dev, kind: kind)
-            lastRGB = kind
-            detailItem.title = applied > 0 ? "灯光 → \(title) ✓" : "⚠️ 设备不支持该灯光效果"
-            flash(applied > 0 ? (kind == "off" ? "✓💡" : "✓🌈") : "⚠️")
+            self.lastRGB = kind
+            self.detailItem.title = applied > 0 ? "灯光 → \(title) ✓" : "⚠️ 设备不支持该灯光效果"
+            self.flash(applied > 0 ? (kind == "off" ? "✓💡" : "✓🌈") : "⚠️")
         }
     }
 
@@ -570,9 +644,9 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func saveAction() {
         act { dev in
-            try uiSaveConfig(dev, rgb: lastRGB)
-            detailItem.title = "已保存为默认设置 ✓ 登录时恢复"
-            flash("✓💾")
+            try uiSaveConfig(dev, rgb: self.lastRGB)
+            self.detailItem.title = "已保存为默认设置 ✓ 登录时恢复"
+            self.flash("✓💾")
         }
     }
 
