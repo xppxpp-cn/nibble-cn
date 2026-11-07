@@ -495,6 +495,20 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A quit event can arrive inside roundTrip's nested run loop. Finish the
+        // current operation before restoring mappings and allowing process exit.
+        DispatchQueue.main.async { [weak self] in
+            HIDWorkQueue.shared.submit {
+                self?.engine?.stop()
+                self?.engine = nil
+                EngineState.writeStatus(["active": false, "reason": "menu bar stopped"])
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         if let activityMonitor { NSEvent.removeMonitor(activityMonitor) }
         if let localActivityMonitor { NSEvent.removeMonitor(localActivityMonitor) }
