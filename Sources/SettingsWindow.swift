@@ -509,11 +509,10 @@ final class SettingsDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc private func replayToggled() {
         let on = replayCheck.state == .on
-        _ = cmdReplay([on ? "install" : "uninstall"])
+        let result = cmdReplay([on ? "install" : "uninstall"])
         replayCheck.state = FileManager.default.fileExists(atPath: replayPlistURL.path) ? .on : .off
-        statusLabel.stringValue = replayCheck.state == .on
-            ? "登录时将自动恢复设置 ✓"
-            : "已关闭登录时恢复设置"
+        if result != 0 { setStatus("❌ Replay 操作失败，请运行 nibble replay status --json 查看状态", sticky: true) }
+        else { setStatus(on ? "已注册登录恢复；可在系统登录项中检查授权" : "已关闭登录时恢复设置") }
     }
 
     @objc private func rateChanged(_ sender: NSSegmentedControl) {

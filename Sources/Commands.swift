@@ -243,9 +243,19 @@ func cmdDoctor() -> Int32 {
            : (LoginItem.supported && !LoginItem.enabled)
             ? "nibble startup on   (or tick “Start Nibble at login” in Settings > General)" : nil)
 
-    let replayInstalled = FileManager.default.fileExists(atPath: replayPlistURL.path)
-    add("login-replay", nil, replayInstalled ? "installed" : "not installed",
-        fix: replayInstalled ? nil : "nibble replay install")
+    if let error = EngineState.read()["replayUpdateError"] as? String {
+        add("replay-update", false, error, fix: "检查后台授权后运行 nibble replay install；失败时保留完整错误输出")
+    }
+    let replay = ReplayManager().diagnostics()
+    add("replay-plist", nil, "\(replay["plistExists"]!) · \(replayPlistURL.path)")
+    add("replay-authorization", replay["authorization"] as? String == "requiresApproval" ? false : nil,
+        "\(replay["authorization"]!)", fix: "requiresApproval" == replay["authorization"] as? String
+            ? "系统设置 > 通用 > 登录项，允许 Nibble 中文版后台运行" : nil)
+    add("replay-loaded", nil, "\(replay["loaded"]!)（一次性任务加载不代表正在执行）")
+    if let last = replay["lastRun"] as? [String: Any] {
+        add("replay-last-run", (last["exitCode"] as? Int) == 0,
+            "exitCode=\(last["exitCode"] ?? "未知") · \(last["finished"] ?? "未知")")
+    } else { add("replay-last-run", nil, "暂无执行记录，不能据 plist 判断执行成功") }
 
     let notifyLimit = lowBatteryThreshold(cfg)
     add("low-battery-alert", nil, notifyLimit.map { "below \($0)%" } ?? "off")
@@ -537,46 +547,43 @@ func cmdApply() -> Int32 {
 
 // MARK: - 登入自動重放（launchd 一次性 agent，跑完即退，零常駐）
 
-let replayPlistURL = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/LaunchAgents/com.ben0128.nibble.replay.plist")
+var replayPlistURL: URL { ReplayEnvironment().plist }
 
 func cmdReplay(_ args: [String]) -> Int32 {
-    let label = "com.ben0128.nibble.replay"
-    let uid = getuid()
-    switch args.first ?? "status" {
-    case "install":
-        guard let exe = Bundle.main.executablePath else { print("❌ cannot resolve executable path"); return 2 }
-        let plist = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-            <key>Label</key><string>\(label)</string>
-            <key>ProgramArguments</key>
-            <array><string>\(exe)</string><string>apply</string></array>
-            <key>RunAtLoad</key><true/>
-            <key>StandardOutPath</key><string>/tmp/nibble-replay.log</string>
-            <key>StandardErrorPath</key><string>/tmp/nibble-replay.log</string>
-        </dict>
-        </plist>
-        """
-        _ = sh(["/bin/launchctl", "bootout", "gui/\(uid)/\(label)"])   // 冪等：先卸舊的
-        do { try plist.write(to: replayPlistURL, atomically: true, encoding: .utf8) }
-        catch { print("❌ cannot write \(replayPlistURL.path): \(error)"); return 2 }
-        let rc = sh(["/bin/launchctl", "bootstrap", "gui/\(uid)", replayPlistURL.path])
-        print(rc == 0 ? "✅ login replay installed: runs `nibble apply` at each login (one-shot, no daemon)\n   plist: \(replayPlistURL.path)\n   ⚠️ rerun `replay install` if you move the nibble binary"
-                      : "⚠️ plist written but launchctl bootstrap returned \(rc)")
-        return 0
-    case "uninstall":
-        _ = sh(["/bin/launchctl", "bootout", "gui/\(uid)/\(label)"])
-        try? FileManager.default.removeItem(at: replayPlistURL)
-        print("✅ login replay removed")
-        return 0
-    default:
-        let installed = FileManager.default.fileExists(atPath: replayPlistURL.path)
-        print(installed ? "replay: installed (\(replayPlistURL.path))" : "replay: not installed (nibble replay install)")
-        return 0
-    }
+    let manager = ReplayManager()
+    do {
+        switch args.first ?? "status" {
+        case "install":
+            guard let exe = Bundle.main.executablePath else { throw ReplayFailure("无法确定可执行文件路径") }
+            let warnings = try manager.install(executable: exe)
+            print("✅ 已注册登录恢复设置：\(manager.env.plist.path)")
+            for warning in warnings { print("⚠️ \(warning)") }
+            return 0
+        case "uninstall":
+            try manager.uninstall()
+            print("✅ 已解除中文版 Replay；原版及无法确认归属的旧代理保持不变")
+            return 0
+        case "run":
+            let started = Date()
+            let result = cmdApply()
+            let status: [String: Any] = ["started": ISO8601DateFormatter().string(from: started),
+                "finished": ISO8601DateFormatter().string(from: Date()), "exitCode": result,
+                "executable": Bundle.main.executablePath ?? "unknown", "version": NIBBLE_VERSION]
+            try FileManager.default.createDirectory(at: manager.env.logs, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys])
+                .write(to: manager.env.result, options: .atomic)
+            return result
+        case "status":
+            let status = manager.diagnostics()
+            if jsonMode { emitJSON(status) }
+            else {
+                print("Replay plist：\(status["plistExists"]!)；授权：\(status["authorization"]!)；job 已加载：\(status["loaded"]!)")
+                print("最近执行：\(status["lastRun"]!)")
+            }
+            return 0
+        default: print("用法：nibble replay [install|uninstall|status]"); return 64
+        }
+    } catch { emitError("\(error)", code: "replay-failed"); return 2 }
 }
 
 // MARK: - UI 共用助手（menubar 與 settings window 共用）

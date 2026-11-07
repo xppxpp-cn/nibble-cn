@@ -74,9 +74,8 @@ install: nibble
 	@echo "installed: $(PREFIX)/bin/nibble"
 
 uninstall:
-	-launchctl bootout gui/$$(id -u)/com.ben0128.nibble.replay 2>/dev/null
-	rm -f ~/Library/LaunchAgents/com.ben0128.nibble.replay.plist
-	rm -f ~/.config/nibble/menubar.lock ~/.config/nibble/engine.json
+	@test -x "$(APP_DEST)/$(APP)/Contents/MacOS/nibble" || { echo "请使用已安装的中文版应用解除服务后再删除；未找到应用"; exit 1; }
+	"$(APP_DEST)/$(APP)/Contents/MacOS/nibble" uninstall-services
 	rm -f $(PREFIX)/bin/nibble
 	rm -rf "$(APP_DEST)/$(APP)"
 	@echo "kept: ~/.config/nibble.json and ~/.config/nibble/backups (your settings and onboard dumps)"

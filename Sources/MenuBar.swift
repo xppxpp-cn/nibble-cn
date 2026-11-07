@@ -192,6 +192,16 @@ final class MenuBarDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildProfileMenu()
         startEngine()
         watchConfig()
+        if runningFromAppBundle(), Bundle.main.bundleIdentifier == Distribution.bundleID,
+           let executable = Bundle.main.executablePath {
+            DispatchQueue.main.async {
+                do { try ReplayManager().reconcile(executable: executable) }
+                catch {
+                    EngineState.write(["replayUpdateError": "\(error)"])
+                    fputs("Replay 更新失败：\(error)\n", stderr)
+                }
+            }
+        }
         let mouseEvents: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDown, .rightMouseDown,
                                                   .otherMouseDown, .scrollWheel, .leftMouseDragged,
                                                   .rightMouseDragged, .otherMouseDragged]

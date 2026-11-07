@@ -500,6 +500,7 @@ do {
 }
 
 runRecoveryTests()
+runReplayTests()
 
 // MARK: - 收尾
 
